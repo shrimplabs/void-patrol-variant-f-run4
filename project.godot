@@ -1,0 +1,16 @@
+; Engine configuration file.
+; It's best edited using the editor and not directly.
+
+config_version=5
+
+[application]
+config/name="void-patrol"
+run/main_scene="res://scenes/main.tscn"
+config/icon="res://icon.svg"
+
+[autoload]
+StateServer="*res://autoload/state_server.gd"
+TestHarness="*res://autoload/test_harness.gd"
+
+[editor_plugins]
+enabled=PackedStringArray("res://addons/gut/plugin.cfg")
