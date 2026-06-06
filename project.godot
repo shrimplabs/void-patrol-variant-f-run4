@@ -38,6 +38,7 @@ move_down={
 ]
 }
 [autoload]
+BulletPool="*res://autoload/bullet_pool.gd"
 StateServer="*res://autoload/state_server.gd"
 TestHarness="*res://autoload/test_harness.gd"
 

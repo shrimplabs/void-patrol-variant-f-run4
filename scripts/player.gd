@@ -88,7 +88,10 @@ func _clamp_to_viewport() -> void:
 
 
 func _update_fire(delta: float) -> void:
-	if bullet_scene == null:
+	# Fire if EITHER the pool is wired up OR a fallback bullet_scene was set.
+	var can_fire: bool = (BulletPool != null and BulletPool.has_method("acquire")) \
+		or bullet_scene != null
+	if not can_fire:
 		return
 	_fire_cooldown -= delta
 	if _fire_cooldown <= 0.0:
@@ -97,11 +100,21 @@ func _update_fire(delta: float) -> void:
 
 
 func _fire() -> void:
-	var b: Node = bullet_scene.instantiate()
-	if b is Node2D:
-		(b as Node2D).global_position = global_position + bullet_spawn_offset
-	get_parent().add_child(b)
-	fired.emit(b)
+	var spawn_pos: Vector2 = global_position + bullet_spawn_offset
+	var parent: Node = get_parent()
+	# Prefer the BulletPool autoload (no per-shot allocation); fall back to a
+	# direct instantiate if the pool is unavailable (e.g. test runs without
+	# the autoload, or future scenes that need to bypass the pool).
+	var b: Node = null
+	if BulletPool != null and BulletPool.has_method("acquire"):
+		b = BulletPool.acquire("player", spawn_pos, parent)
+	if b == null and bullet_scene != null:
+		b = bullet_scene.instantiate()
+		if b is Node2D:
+			(b as Node2D).global_position = spawn_pos
+		parent.add_child(b)
+	if b != null:
+		fired.emit(b)
 
 
 ## Apply damage. Returns the remaining shield.

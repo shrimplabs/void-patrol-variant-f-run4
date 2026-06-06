@@ -156,14 +156,18 @@ func test_get_state_returns_full_dictionary() -> void:
 
 # --- Auto-fire ----------------------------------------------------------
 
-func test_auto_fire_does_nothing_when_bullet_scene_is_null() -> void:
-	# Default player has no bullet_scene wired in this test setup.
+func test_auto_fire_uses_pool_when_bullet_scene_is_null() -> void:
+	# Default player has no bullet_scene wired in this test setup, but the
+	# BulletPool autoload is present in test runs, so auto-fire spawns a
+	# bullet via the pool (no per-shot allocation in the player itself).
 	assert_null(_player.bullet_scene, "bullet_scene should be null in test setup")
-	# Run a few physics frames worth of cooldown decrement.
+	assert_not_null(BulletPool, "BulletPool autoload should be available in test runs")
 	_player._update_fire(1.0)
-	# No assertion needed beyond "did not crash"; bullets count would be 0.
 	var bullets := get_tree().get_nodes_in_group("bullets")
-	assert_eq(bullets.size(), 0, "No bullets should spawn when bullet_scene is null")
+	assert_eq(bullets.size(), 1, "One bullet should be spawned via the pool")
+	# Release the bullet back to the pool to keep test isolation tidy.
+	if bullets.size() > 0:
+		BulletPool.release(bullets[0])
 
 
 func test_auto_fire_spawns_bullet_after_cooldown() -> void:
