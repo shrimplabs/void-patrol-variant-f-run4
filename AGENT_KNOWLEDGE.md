@@ -62,3 +62,24 @@ Use `check_scripts.gd` (or any SceneTree-based loader) which pre-loads
 class_names and is aware of autoload references, instead of a naive
 "load every .gd" script. check_scripts.gd is the project-blessed script
 parse tool.
+
+---
+## closure-repair task pattern (void-patrol-variant-f-run4)
+
+When a regression fix touches files that are also used as autoload globals (e.g. `BulletPool`), bare autoload-name references like `if BulletPool == null:` parse fine inside GUT (autoloads are initialized) but fail to compile in `--script` / `--check-only` invocations where the autoload table is empty.
+
+Fix pattern: replace each bare autoload reference with a defensive `get_node_or_null("/root/<AutoloadName>")` lookup, cached in a member var. Tests can still use the bare name (they run under GUT where autoloads are live).
+
+Do NOT add `class_name <AutoloadName>` to the autoload script — that collides with the autoload identifier and breaks other code.
+
+## bullet_pool.gd free-list pop gotcha (recurring)
+
+`var candidate: Node = free_list.pop_back()` throws "Trying to assign invalid previously freed instance" if the free list contains a freed-Node Variant. Fix: keep the local UNTYPED (`var candidate = free_list.pop_back()`) so `is_instance_valid` can filter stale refs as designed. Stale refs accumulate when tests queue_free the parent before child bullets are released.
+
+## Project: void-patrol-variant-f-run4 — final closure state
+
+- All 3 closure-repair tasks (reg-501e6adcae, reg-95ad0ba384-1, reg-95ad0ba384-2) landed successfully.
+- 70 GUT tests, 69 pass, 1 risky placeholder (test_placeholder.gd).
+- check_scripts.gd: all scripts parse.
+- Game launches and exposes the expected state shape (player, hud, enemies/enemy_count/enemy_counts_by_type, scene, score, wave, high_score, bombs, game_over).
+- Bullet pool free-list is defensive; player.gd / enemy_fighter.gd / enemy_bomber.gd look up the autoload via `get_node_or_null("/root/BulletPool")` instead of the bare global.
