@@ -1,0 +1,18 @@
+[gd_scene load_steps=3 format=3 uid="uid://b1enemyfighter01"]
+
+[ext_resource type="Script" path="res://scripts/enemy_fighter.gd" id="1_fighter"]
+
+[sub_resource type="RectangleShape2D" id="RectShape2D_fighter"]
+size = Vector2(24, 24)
+
+[node name="EnemyFighter" type="Area2D"]
+script = ExtResource("1_fighter")
+
+[node name="Shape" type="CollisionShape2D" parent="."]
+shape = SubResource("RectShape2D_fighter")
+
+[node name="Visual" type="Polygon2D" parent="."]
+color = Color(0.4, 0.6, 1.0, 1)
+polygon = PackedVector2Array(0, 12, -12, -4, -6, -10, 0, -6, 6, -10, 12, -4)
+
+[node name="VisibleOnScreenNotifier2D" type="VisibleOnScreenNotifier2D" parent="."]
