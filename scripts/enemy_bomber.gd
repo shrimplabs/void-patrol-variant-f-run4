@@ -42,10 +42,31 @@ func _fire_pattern() -> void:
 	_spawn_enemy_bullet(right)
 
 
+## Cached lookup of the BulletPool autoload. Resolved on demand (the
+## autoload is only registered when the main scene is booted, so bare
+## `BulletPool` references fail to compile in `--script` / `--check-only`
+## headless invocations; we go through the SceneTree instead).
+var _bullet_pool: Node = null
+
+
+func _resolve_bullet_pool() -> Node:
+	if _bullet_pool != null and is_instance_valid(_bullet_pool):
+		return _bullet_pool
+	var tree := get_tree()
+	if tree == null:
+		return null
+	var root := tree.root
+	if root == null:
+		return null
+	_bullet_pool = root.get_node_or_null("BulletPool")
+	return _bullet_pool
+
+
 func _spawn_enemy_bullet(direction: Vector2) -> Node:
-	if BulletPool == null or not BulletPool.has_method("acquire"):
+	var pool := _resolve_bullet_pool()
+	if pool == null or not pool.has_method("acquire"):
 		return null
 	var parent := get_parent()
 	if parent == null:
 		return null
-	return BulletPool.acquire("enemy", global_position, parent)
+	return pool.acquire("enemy", global_position, parent)

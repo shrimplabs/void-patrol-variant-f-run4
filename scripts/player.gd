@@ -87,9 +87,34 @@ func _clamp_to_viewport() -> void:
 	position.y = clamp(position.y, vp.position.y + half.y, vp.position.y + vp.size.y - half.y)
 
 
+## Cached lookup of the BulletPool autoload. Resolved on first use and
+## reused thereafter so we don't pay the node-path lookup cost per shot.
+## Bare `BulletPool` is also a global identifier in the autoloaded scene
+## tree, but using it directly in script expressions fails to compile in
+## contexts where the autoload table is empty (e.g. `--script` /
+## `--check-only` headless invocations), so we go through the SceneTree
+## instead. Tests can still access the autoload by its registered name
+## `BulletPool` -- this lookup is for self-containment.
+var _bullet_pool: Node = null
+
+
+func _resolve_bullet_pool() -> Node:
+	if _bullet_pool != null and is_instance_valid(_bullet_pool):
+		return _bullet_pool
+	var tree := get_tree()
+	if tree == null:
+		return null
+	var root := tree.root
+	if root == null:
+		return null
+	_bullet_pool = root.get_node_or_null("BulletPool")
+	return _bullet_pool
+
+
 func _update_fire(delta: float) -> void:
 	# Fire if EITHER the pool is wired up OR a fallback bullet_scene was set.
-	var can_fire: bool = (BulletPool != null and BulletPool.has_method("acquire")) \
+	var pool := _resolve_bullet_pool()
+	var can_fire: bool = (pool != null and pool.has_method("acquire")) \
 		or bullet_scene != null
 	if not can_fire:
 		return
@@ -105,9 +130,10 @@ func _fire() -> void:
 	# Prefer the BulletPool autoload (no per-shot allocation); fall back to a
 	# direct instantiate if the pool is unavailable (e.g. test runs without
 	# the autoload, or future scenes that need to bypass the pool).
+	var pool := _resolve_bullet_pool()
 	var b: Node = null
-	if BulletPool != null and BulletPool.has_method("acquire"):
-		b = BulletPool.acquire("player", spawn_pos, parent)
+	if pool != null and pool.has_method("acquire"):
+		b = pool.acquire("player", spawn_pos, parent)
 	if b == null and bullet_scene != null:
 		b = bullet_scene.instantiate()
 		if b is Node2D:
