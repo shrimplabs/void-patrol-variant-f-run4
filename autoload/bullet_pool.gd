@@ -52,8 +52,13 @@ func acquire(
 	# list can contain stale references if a bullet was queue_freed externally
 	# (e.g. its parent was queue_freed in a test before the bullet was
 	# released back to the pool). Those must be discarded.
+	# NOTE: keep `candidate` UNTYPED. `free_list.pop_back()` returns a Variant;
+	# if the underlying Node has been freed, assigning to `var candidate: Node`
+	# throws "Trying to assign invalid previously freed instance" before the
+	# `is_instance_valid` check below can run. The untyped local lets the
+	# check work as intended.
 	while not free_list.is_empty():
-		var candidate: Node = free_list.pop_back()
+		var candidate = free_list.pop_back()
 		if is_instance_valid(candidate):
 			bullet = candidate
 			break
