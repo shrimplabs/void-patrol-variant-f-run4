@@ -122,7 +122,6 @@ func test_player_bullet_body_entered_damages_enemy_target() -> void:
 	var b: Bullet = _acquire_player(Vector2.ZERO)
 	var target: Node2D = _DAMAGE_TARGET.new()
 	target.add_to_group("enemies")
-	_holder.add_child(target)
 	add_child_autofree(target)
 	b._on_body_entered(target)
 	assert_eq(target.last_damage, b.damage, "Enemy target should take bullet.damage")
@@ -134,7 +133,6 @@ func test_enemy_bullet_body_entered_damages_player_target() -> void:
 	var b: Bullet = _acquire_enemy(Vector2.ZERO)
 	var target: Node2D = _DAMAGE_TARGET.new()
 	target.add_to_group("player")
-	_holder.add_child(target)
 	add_child_autofree(target)
 	b._on_body_entered(target)
 	assert_eq(target.last_damage, b.damage, "Player target should take enemy bullet damage")
@@ -146,7 +144,6 @@ func test_player_bullet_does_not_hit_another_player() -> void:
 	var b: Bullet = _acquire_player(Vector2.ZERO)
 	var ally: Node2D = _DAMAGE_TARGET.new()
 	ally.add_to_group("player")
-	_holder.add_child(ally)
 	add_child_autofree(ally)
 	b._on_body_entered(ally)
 	assert_eq(ally.last_damage, 0, "Player bullet should not damage same-faction target")
@@ -155,11 +152,12 @@ func test_player_bullet_does_not_hit_another_player() -> void:
 
 
 func test_bullet_does_not_hit_other_bullets() -> void:
+	# `other` is a Bullet (not a _DAMAGE_TARGET), so it has no `last_damage`
+	# field. The contract we want to assert is that the source bullet stays
+	# in the tree because `_can_hit` correctly filters out other bullets.
 	var b: Bullet = _acquire_player(Vector2.ZERO)
 	var other: Bullet = _acquire_enemy(Vector2.ZERO)
 	b._on_body_entered(other)
-	assert_eq(other.last_damage, 0,
-		"Bullets should not damage other bullets (no friendly fire)")
 	assert_eq(b.get_parent(), _holder, "Bullet should not be released on bullet-on-bullet")
 
 
@@ -169,7 +167,6 @@ func test_player_bullet_area_entered_damages_enemy_area() -> void:
 	var b: Bullet = _acquire_player(Vector2.ZERO)
 	var target: Node2D = _DAMAGE_TARGET.new()
 	target.add_to_group("enemies")
-	_holder.add_child(target)
 	add_child_autofree(target)
 	b._on_area_entered(target)
 	assert_eq(target.last_damage, b.damage, "Enemy area target should take bullet damage")

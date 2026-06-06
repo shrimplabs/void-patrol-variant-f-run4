@@ -26,6 +26,11 @@ const DEFAULT_DAMAGE: int = 1
 ## Back-reference to the BulletPool autoload (set by the pool on acquire).
 ## If null, the bullet queue_frees itself on despawn.
 var pool: Node = null
+## Last damage value this bullet received. Stays at 0 in normal play (friendly
+## fire is filtered so bullets never damage each other), but is exposed so
+## tests and tooling can assert "no damage applied" without inspecting
+## another node's state.
+var last_damage: int = 0
 
 @onready var _visual: Polygon2D = get_node_or_null("Visual")
 
