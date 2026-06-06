@@ -32,3 +32,33 @@ Project: void-patrol-variant-f-run4 (Godot 4.6)
 - get_game_state() returns {scene, score, wave, high_score, bombs, game_over, player, hud}
 - add_score(amount) and set_wave(n) for game-state changes from enemies/waves
 - Already spawns Player + HUD in _ready; new systems should add as children of main, or be wired via signal handlers here
+
+---
+## bullet_pool.gd free-list gotcha (Godot 4)
+
+`var candidate: Node = free_list.pop_back()` THROWS "Trying to assign
+invalid previously freed instance" if the free list contains a freed-Node
+Variant. The intended `is_instance_valid(candidate)` check below never
+runs because the typed assignment itself fails first.
+
+Fix: keep the local UNTYPED (`var candidate = free_list.pop_back()`) so the
+Variant can hold the freed-Node reference, and let `is_instance_valid`
+discard it as designed.
+
+When does the free list get stale refs? Most commonly in tests where a
+parent (e.g. a test fixture Main) is freed before its child bullets are
+released, and the bullets get released to the pool in a half-freed state.
+Production code that uses the pool correctly is unlikely to hit this, but
+defensive typing is required regardless.
+
+## --script mode vs autoloads
+
+`/opt/homebrew/bin/godot --headless --path . --script res://foo.gd --quit`
+does NOT load autoloads. Scripts that reference autoload names directly
+(e.g. `if BulletPool == null:`) will fail to compile with
+"Identifier not found: BulletPool" when loaded this way.
+
+Use `check_scripts.gd` (or any SceneTree-based loader) which pre-loads
+class_names and is aware of autoload references, instead of a naive
+"load every .gd" script. check_scripts.gd is the project-blessed script
+parse tool.
