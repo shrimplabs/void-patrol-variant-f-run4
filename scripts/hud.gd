@@ -112,14 +112,26 @@ func show_banner(text: String, duration: float = 1.5) -> void:
 	_banner_label.text = text
 	if _banner_tween and _banner_tween.is_running():
 		_banner_tween.kill()
-	# Snap to fully visible, then fade out at the end of the hold.
-	_banner_label.modulate.a = 1.0
-	# Reserve 0.35s for the fade-out tail. If the caller asked for a
-	# very short duration (< 0.35s) just snap through.
-	var hold: float = max(0.05, duration - 0.35)
+	# Reserve 0.15s for a fade-in and 0.35s for a fade-out so the
+	# banner doesn't pop in or out jarringly. If the caller asked for
+	# a short duration (< 0.5s) the hold drops to zero and we skip
+	# the fade-in (snap to visible, then fade out) so the banner
+	# doesn't silently disappear before the user can read it.
+	const FADE_IN := 0.15
+	const FADE_OUT := 0.35
+	var hold: float = max(0.0, duration - FADE_IN - FADE_OUT)
 	_banner_tween = create_tween()
-	_banner_tween.tween_interval(hold)
-	_banner_tween.tween_property(_banner_label, "modulate:a", 0.0, 0.35)
+	if hold > 0.0:
+		_banner_label.modulate.a = 0.0
+		_banner_tween.tween_property(_banner_label, "modulate:a", 1.0, FADE_IN)
+		_banner_tween.tween_interval(hold)
+		_banner_tween.tween_property(_banner_label, "modulate:a", 0.0, FADE_OUT)
+	else:
+		# Short banner -- snap to fully visible, then fade out so the
+		# text is at least readable for most of the duration.
+		_banner_label.modulate.a = 1.0
+		_banner_tween.tween_interval(max(0.05, duration - FADE_OUT))
+		_banner_tween.tween_property(_banner_label, "modulate:a", 0.0, FADE_OUT)
 
 
 ## Hide any active banner immediately. Used when the game ends or the
