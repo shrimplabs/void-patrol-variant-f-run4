@@ -46,6 +46,16 @@ func _ready() -> void:
 	_spawn_wave_manager()
 	_wire_signals()
 	_wire_wave_signals()
+	# Auto-start the wave sequence when Main is the running scene (i.e.
+	# when main.tscn is loaded as the SceneTree's current_scene). The
+	# `current_scene == self` gate prevents GUT tests (which instantiate
+	# Main as a sub-node of the test runner) from auto-spawning wave 1 --
+	# those tests call `wave_manager.start_game()` explicitly so they can
+	# control when the wave begins.
+	var tree := get_tree()
+	if tree != null and tree.current_scene == self:
+		if wave_manager != null and wave_manager.has_method("start_game"):
+			wave_manager.start_game()
 
 
 func _spawn_player() -> void:
