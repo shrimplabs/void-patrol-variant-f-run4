@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -16 32 32" width="32" height="32">
+  <defs>
+    <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="55%" stop-color="#ffffff" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="crystalGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="50%" stop-color="#cccccc" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#888888" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Soft outer aura -->
+  <circle cx="0" cy="0" r="14" fill="url(#coreGlow)" opacity="0.55"/>
+
+  <!-- Six-pointed crystal/atom star -->
+  <g fill="url(#crystalGrad)" stroke="#ffffff" stroke-width="0.6" stroke-linejoin="round">
+    <!-- Hexagonal crystal body -->
+    <path d="M 0 -11 L 9.5 -5.5 L 9.5 5.5 L 0 11 L -9.5 5.5 L -9.5 -5.5 Z"/>
+  </g>
+
+  <!-- Inner facets (catches light) -->
+  <g fill="#ffffff" opacity="0.55">
+    <path d="M 0 -11 L 9.5 -5.5 L 0 0 Z"/>
+    <path d="M 0 -11 L -9.5 -5.5 L 0 0 Z"/>
+  </g>
+  <g fill="#000000" opacity="0.25">
+    <path d="M 0 0 L 9.5 5.5 L 9.5 -5.5 Z"/>
+    <path d="M 0 0 L -9.5 5.5 L -9.5 -5.5 Z"/>
+  </g>
+
+  <!-- Four cardinal points (rays) -->
+  <g fill="#ffffff" opacity="0.9">
+    <path d="M 0 -15 L 1.2 -11 L -1.2 -11 Z"/>
+    <path d="M 0 15 L 1.2 11 L -1.2 11 Z"/>
+    <path d="M -15 0 L -11 -1.2 L -11 1.2 Z"/>
+    <path d="M 15 0 L 11 -1.2 L 11 1.2 Z"/>
+  </g>
+
+  <!-- Diagonal rays (smaller) -->
+  <g fill="#ffffff" opacity="0.65">
+    <path d="M -10.6 -10.6 L -7.8 -8.5 L -8.5 -7.8 Z"/>
+    <path d="M 10.6 -10.6 L 7.8 -8.5 L 8.5 -7.8 Z"/>
+    <path d="M -10.6 10.6 L -8.5 7.8 L -7.8 8.5 Z"/>
+    <path d="M 10.6 10.6 L 8.5 7.8 L 7.8 8.5 Z"/>
+  </g>
+
+  <!-- Bright core highlight -->
+  <circle cx="0" cy="0" r="2.5" fill="#ffffff"/>
+  <circle cx="-0.8" cy="-0.8" r="1" fill="#ffffff"/>
+</svg>
