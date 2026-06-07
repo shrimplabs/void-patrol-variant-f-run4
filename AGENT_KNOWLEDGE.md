@@ -83,3 +83,26 @@ Do NOT add `class_name <AutoloadName>` to the autoload script — that collides 
 - check_scripts.gd: all scripts parse.
 - Game launches and exposes the expected state shape (player, hud, enemies/enemy_count/enemy_counts_by_type, scene, score, wave, high_score, bombs, game_over).
 - Bullet pool free-list is defensive; player.gd / enemy_fighter.gd / enemy_bomber.gd look up the autoload via `get_node_or_null("/root/BulletPool")` instead of the bare global.
+
+---
+## HUD polish pattern (void-patrol-variant-f-run4)
+
+For damage / status overlay nodes, structure as:
+```
+HUD (CanvasLayer)
+└── Root (Control, PRESET_FULL_RECT)
+    ├── DamageFlash (ColorRect, anchors_preset=15, mouse_filter=IGNORE)
+    ├── ScoreLabel / WaveLabel / LivesLabel (Label, viewport-relative offsets)
+    ├── ShieldBar (ProgressBar with StyleBoxFlat background + fill)
+    └── ShieldLabel (Label, right-aligned next to the bar)
+```
+
+Key rules:
+- Overlay (`DamageFlash`) must be the FIRST child of `Root` so it renders behind text.
+- Set `mouse_filter = MOUSE_FILTER_IGNORE` on the overlay so it never intercepts clicks.
+- Mutate `StyleBoxFlat.bg_color` on the ProgressBar's `theme_override_styles/fill` at runtime to recolor the bar without rebuilding the theme.
+- Use a looping `create_tween().set_loops()` with two `tween_property(_bar, "modulate:a", ...)` steps to pulse the bar (1 / (2 * Hz) seconds per step).
+- For "flash then fade", kill the previous tween with `if _tween and _tween.is_running(): _tween.kill()`, then snap to visible alpha and tween to 0.
+- For damage-vs-regen differentiation, track `_last_shield` in the signal handler and only call `flash_damage(...)` when `current < _last_shield`.
+
+Recurring gotcha: HUD label `text` strings should use double-space alignment ("SCORE  0") — single colon formats ("SCORE: 0") feel cramped next to a numeric value.
