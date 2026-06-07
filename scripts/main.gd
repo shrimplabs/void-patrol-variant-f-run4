@@ -26,6 +26,9 @@ var game_over: bool = false
 
 var player: Node = null
 var hud: CanvasLayer = null
+## Procedural wave manager (task 0004). Spawned as a child in _ready and
+## auto-starts on _ready so the game boots directly into wave 1.
+var wave_manager: Node = null
 ## Live enemies currently parented under Main. We track by node reference and
 ## prune on `tree_exited` so the StateServer list never includes freed nodes.
 var _enemies: Array = []
@@ -40,7 +43,9 @@ var _last_died_enemy_position: Vector2 = Vector2.ZERO
 func _ready() -> void:
 	_spawn_player()
 	_spawn_hud()
+	_spawn_wave_manager()
 	_wire_signals()
+	_wire_wave_signals()
 
 
 func _spawn_player() -> void:
@@ -51,6 +56,20 @@ func _spawn_player() -> void:
 func _spawn_hud() -> void:
 	hud = HUD_SCENE.instantiate()
 	add_child(hud)
+
+
+func _spawn_wave_manager() -> void:
+	# Instantiate the wave manager script and add it as a child. We don't
+	# load a .tscn for it because the manager is a pure-logic node (no
+	# visual / collision), and keeping it script-only avoids a one-line
+	# scene file we don't need.
+	var WaveManagerScript := load("res://scripts/wave_manager.gd")
+	if WaveManagerScript == null:
+		push_warning("Main._spawn_wave_manager: wave_manager.gd failed to load")
+		return
+	wave_manager = WaveManagerScript.new()
+	wave_manager.name = "WaveManager"
+	add_child(wave_manager)
 
 
 func _wire_signals() -> void:
@@ -65,6 +84,59 @@ func _wire_signals() -> void:
 		# Initial state broadcast so HUD shows the right baseline (no
 		# powerup, no countdown).
 		_on_player_powerup_changed(-1, "", 0.0)
+
+
+## Connect the wave manager's signals to the HUD (banner) and to the
+## game's wave counter. Called from _ready after the wave manager is
+## spawned so both ends are guaranteed to be in the tree.
+func _wire_wave_signals() -> void:
+	if wave_manager == null:
+		return
+	if wave_manager.has_signal("banner_shown"):
+		wave_manager.banner_shown.connect(_on_wave_banner)
+	if wave_manager.has_signal("wave_started"):
+		wave_manager.wave_started.connect(_on_wave_started)
+	if wave_manager.has_signal("wave_cleared"):
+		wave_manager.wave_cleared.connect(_on_wave_cleared)
+	if wave_manager.has_signal("boss_fight_started"):
+		wave_manager.boss_fight_started.connect(_on_boss_fight_started)
+
+
+func _on_wave_banner(text: String, duration: float) -> void:
+	if hud and hud.has_method("show_banner"):
+		hud.show_banner(text, duration)
+
+
+func _on_wave_started(wave_number: int) -> void:
+	# Update the global wave counter (so the HUD WaveLabel reflects the
+	# current wave even if the wave manager state lags by a frame).
+	set_wave(wave_number)
+
+
+func _on_wave_cleared(_wave_number: int) -> void:
+	# Game-flow integration point: a cleared wave could refill lives or
+	# grant a small score bonus. The full game-flow design lives in
+	# task 0007; for now we just leave a checkpoint hook for the harness.
+	var harness := get_node_or_null("/root/TestHarness")
+	if harness != null and harness.has_method("checkpoint"):
+		harness.checkpoint({"event": "wave_cleared", "wave": _wave_number_for_harness()})
+
+
+func _wave_number_for_harness() -> int:
+	# Helper so the wave_cleared handler above can capture the wave
+	# number without shadowing the function parameter.
+	if wave_manager == null:
+		return 0
+	return int(wave_manager.current_wave)
+
+
+func _on_boss_fight_started() -> void:
+	# Update the global wave counter to 7 (per design doc). The boss
+	# itself is task 0005's responsibility; this only updates state.
+	set_wave(wave_manager.current_wave if wave_manager else 7)
+	var harness := get_node_or_null("/root/TestHarness")
+	if harness != null and harness.has_method("checkpoint"):
+		harness.checkpoint({"event": "boss_fight_started"})
 
 
 var _last_shield: float = 0.0
@@ -332,6 +404,12 @@ func get_game_state() -> Dictionary:
 		if counts.has(etype):
 			counts[etype] = int(counts[etype]) + 1
 	_enemies = live_enemies
+	# Wave manager snapshot. Optional: the manager may be null in tests
+	# that strip the scene tree. We always include the key so the
+	# StateServer has a stable shape.
+	var wave_state: Dictionary = {}
+	if wave_manager and wave_manager.has_method("get_state"):
+		wave_state = wave_manager.get_state()
 	return {
 		"scene": "Main",
 		"score": score,
@@ -344,4 +422,5 @@ func get_game_state() -> Dictionary:
 		"enemies": enemy_states,
 		"enemy_count": enemy_states.size(),
 		"enemy_counts_by_type": counts,
+		"wave_manager": wave_state,
 	}

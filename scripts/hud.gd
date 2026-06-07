@@ -15,6 +15,7 @@ const LOW_SHIELD_PULSE_HZ := 4.0
 @onready var _shield_label: Label = $Root/ShieldLabel
 @onready var _powerup_label: Label = $Root/PowerupLabel
 @onready var _damage_flash: ColorRect = $Root/DamageFlash
+@onready var _banner_label: Label = $Root/BannerLabel
 
 var score: int = 0
 var wave: int = 1
@@ -28,6 +29,9 @@ var active_powerup_remaining: float = 0.0
 
 var _flash_tween: Tween = null
 var _pulse_tween: Tween = null
+var _banner_tween: Tween = null
+## Current banner text. Empty string means "no banner visible".
+var _banner_text: String = ""
 
 
 func _ready() -> void:
@@ -38,6 +42,10 @@ func _ready() -> void:
 	if _damage_flash:
 		_damage_flash.modulate.a = 0.0
 		_damage_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Banner starts hidden (no modulate animation needed; show_banner
+	# handles fade-in/fade-out via the tween).
+	if _banner_label:
+		_banner_label.modulate.a = 0.0
 	_refresh_all()
 
 
@@ -87,6 +95,38 @@ func flash_damage(_amount: float = 0.0) -> void:
 	_damage_flash.modulate.a = 0.55
 	_flash_tween = create_tween()
 	_flash_tween.tween_property(_damage_flash, "modulate:a", 0.0, 0.35)
+
+
+## Show a banner with the given text for `duration` seconds. The banner
+## fades in over 0.15s, holds for the remainder, then fades out. Used by
+## the wave manager for "INCOMING WAVE n" / "WAVE n CLEAR" / "BOSS
+## INCOMING". A subsequent call replaces any in-flight banner.
+func show_banner(text: String, duration: float = 1.5) -> void:
+	if _banner_label == null:
+		return
+	_banner_text = text
+	_banner_label.text = text
+	if _banner_tween and _banner_tween.is_running():
+		_banner_tween.kill()
+	# Snap to fully visible, then fade out at the end of the hold.
+	_banner_label.modulate.a = 1.0
+	# Reserve 0.35s for the fade-out tail. If the caller asked for a
+	# very short duration (< 0.35s) just snap through.
+	var hold: float = max(0.05, duration - 0.35)
+	_banner_tween = create_tween()
+	_banner_tween.tween_interval(hold)
+	_banner_tween.tween_property(_banner_label, "modulate:a", 0.0, 0.35)
+
+
+## Hide any active banner immediately. Used when the game ends or the
+## player loses so the INCOMING banner doesn't linger.
+func hide_banner() -> void:
+	if _banner_label == null:
+		return
+	if _banner_tween and _banner_tween.is_running():
+		_banner_tween.kill()
+	_banner_label.modulate.a = 0.0
+	_banner_text = ""
 
 
 func _shield_color(ratio: float) -> Color:
@@ -173,4 +213,5 @@ func get_state() -> Dictionary:
 		"max_shield": max_shield,
 		"active_powerup_name": active_powerup_name,
 		"active_powerup_remaining": active_powerup_remaining,
+		"banner_text": _banner_text,
 	}
