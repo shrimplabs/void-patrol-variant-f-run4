@@ -13,6 +13,7 @@ const LOW_SHIELD_PULSE_HZ := 4.0
 @onready var _lives_label: Label = $Root/LivesLabel
 @onready var _shield_bar: ProgressBar = $Root/ShieldBar
 @onready var _shield_label: Label = $Root/ShieldLabel
+@onready var _powerup_label: Label = $Root/PowerupLabel
 @onready var _damage_flash: ColorRect = $Root/DamageFlash
 
 var score: int = 0
@@ -20,6 +21,10 @@ var wave: int = 1
 var lives: int = 3
 var shield: float = 100.0
 var max_shield: float = 100.0
+## Currently-displayed active power-up. Empty string = no powerup.
+var active_powerup_name: String = ""
+## Remaining seconds on the active power-up (0 = instant / expired).
+var active_powerup_remaining: float = 0.0
 
 var _flash_tween: Tween = null
 var _pulse_tween: Tween = null
@@ -116,6 +121,47 @@ func _refresh_all() -> void:
 	set_wave(wave)
 	set_lives(lives)
 	set_shield(shield, max_shield)
+	set_active_powerup(active_powerup_name, active_powerup_remaining)
+
+
+## Set the active power-up label. `name` is the human-readable type
+## (e.g. "DOUBLE SHOT"), `remaining` is the seconds left (0 = no timer,
+## "" or negative = clear the label). The label lives above the shield
+## bar (added in hud.tscn as PowerupLabel).
+func set_active_powerup(powerup_name: String, remaining: float) -> void:
+	# When the timer runs out (or no name is given), clear BOTH the name
+	# and the remaining time. The previous version only cleared the label
+	# text, which left `active_powerup_name` stale for queries that read
+	# the field directly (e.g. the StateServer / tests / future UI code).
+	if powerup_name == "" or remaining <= 0.0:
+		active_powerup_name = ""
+		active_powerup_remaining = 0.0
+		if _powerup_label != null:
+			_powerup_label.text = ""
+		return
+	active_powerup_name = powerup_name
+	active_powerup_remaining = remaining
+	if _powerup_label != null:
+		_powerup_label.text = "%s  %.1fs" % [powerup_name, remaining]
+	# Format: "DOUBLE SHOT  12.3s". One decimal place is enough for the
+	# "how much longer does this last" UI hint; integer seconds would
+	# feel jumpy.
+	_powerup_label.text = "%s  %.1fs" % [powerup_name, remaining]
+
+
+## Continuously update the active power-up's remaining time on screen.
+## Called every physics frame from _process; cheap when the label is
+## empty (text is already blank and the format pass is skipped).
+func _process(_delta: float) -> void:
+	if active_powerup_remaining > 0.0 and active_powerup_name != "":
+		active_powerup_remaining = max(0.0, active_powerup_remaining - _delta)
+		if _powerup_label != null:
+			_powerup_label.text = "%s  %.1fs" % [active_powerup_name, active_powerup_remaining]
+		if active_powerup_remaining <= 0.0:
+			# Countdown reached zero -- clear the label so the UI doesn't
+			# show a stale "0.0s" frame.
+			if _powerup_label != null:
+				_powerup_label.text = ""
 
 
 func get_state() -> Dictionary:
@@ -125,4 +171,6 @@ func get_state() -> Dictionary:
 		"lives": lives,
 		"shield": shield,
 		"max_shield": max_shield,
+		"active_powerup_name": active_powerup_name,
+		"active_powerup_remaining": active_powerup_remaining,
 	}

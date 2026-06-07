@@ -126,11 +126,19 @@ func _apply_damage_to(target: Node) -> void:
 		target.take_damage(damage)
 
 
-## A target is hittable if it's not a bullet and not in our faction's group.
+## A target is hittable if it's not a bullet, not a powerup pickup, and
+## not in our faction's group.
 func _can_hit(target: Node) -> bool:
 	if target == null:
 		return false
 	if target.is_in_group("bullets"):
+		return false
+	# Powerups are pickups, not combat targets. Without this, a player
+	# bullet fired the instant the player collects a powerup would hit
+	# the same-area pickup and try to release itself from inside a
+	# physics callback (raising "Removing a CollisionObject node during
+	# a physics callback").
+	if target.is_in_group("powerup") or target.is_in_group("powerups"):
 		return false
 	# "player" group is for the player; "enemy" group is for enemy ships.
 	# Don't shoot same faction.
