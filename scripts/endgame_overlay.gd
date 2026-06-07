@@ -39,6 +39,20 @@ var _is_new_high: bool = false
 var _blink_t: float = 0.0
 ## Blink period (seconds). Matches MenuOverlay for visual consistency.
 const PROMPT_BLINK_SECONDS := 1.2
+## How long the game-over / victory overlay takes to fade in. The
+## overlay is shown on a high-stakes moment (player just died or
+## just won), so a slightly longer fade than the menu lets the
+## player absorb the result before the prompt demands a press.
+const OVERLAY_FADE_IN_SECONDS := 0.35
+## How long the overlay takes to fade out. Slightly shorter than
+## the fade-in -- the player has already chosen, they just want
+## the next screen up.
+const OVERLAY_FADE_OUT_SECONDS := 0.2
+## Active fade tween for the Root control's modulate.a. Killed on
+## any new show/hide so a quick game-over->menu->play->game-over
+## cycle doesn't double-animate. Auto-cleared by Godot when the
+## tween finishes.
+var _root_tween: Tween = null
 
 
 func _ready() -> void:
@@ -104,13 +118,37 @@ func set_summary(final_score: int, high_score: int, is_new_high: bool) -> void:
 	_refresh_labels()
 
 
+## Show the overlay with a fade-in. The Root control snaps to
+## alpha 0 and tweens to 1 over OVERLAY_FADE_IN_SECONDS, so the
+## result (game over / victory) is revealed gently instead of
+## popping in. Public-ish: called from main.gd whenever the session
+## transitions to GAME_OVER or VICTORY.
 func show_overlay() -> void:
+	if _root_tween != null and _root_tween.is_valid():
+		_root_tween.kill()
 	visible = true
 	_refresh_labels()
+	var root := $Root
+	root.modulate.a = 0.0
+	_root_tween = create_tween()
+	_root_tween.tween_property(root, "modulate:a", 1.0, OVERLAY_FADE_IN_SECONDS)
 
 
+## Hide the overlay with a quick fade-out. The CanvasLayer stays
+## visible until the tween finishes, then `visible` is cleared so
+## the next session can drive input through the gameplay layer
+## (or the menu overlay can take over). Called from main.gd on
+## restart from game-over, or when the menu is re-shown after
+## victory.
 func hide_overlay() -> void:
-	visible = false
+	if _root_tween != null and _root_tween.is_valid():
+		_root_tween.kill()
+	var root := $Root
+	_root_tween = create_tween()
+	_root_tween.tween_property(root, "modulate:a", 0.0, OVERLAY_FADE_OUT_SECONDS)
+	_root_tween.tween_callback(func() -> void:
+		visible = false
+	)
 
 
 func _refresh_labels() -> void:

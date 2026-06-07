@@ -36,6 +36,19 @@ var _difficulty: int = 0
 var _blink_t: float = 0.0
 ## How long one full blink cycle takes (in seconds).
 const PROMPT_BLINK_SECONDS := 1.2
+## How long the menu takes to fade IN from invisible to fully
+## visible. 0.3s feels intentional without delaying the first
+## interaction -- the title is up before the player finishes
+## lifting their hand off the previous screen.
+const MENU_FADE_IN_SECONDS := 0.3
+## How long the menu takes to fade OUT. Slightly shorter than the
+## fade-in so the gameplay reveal feels snappy (the player just
+## confirmed the start, they want to play).
+const MENU_FADE_OUT_SECONDS := 0.2
+## Active fade tween for the Root control's modulate.a. Killed on
+## any new show/hide so a quick menu->game->menu toggle doesn't
+## double-animate. Auto-cleared by Godot when the tween finishes.
+var _root_tween: Tween = null
 
 
 func _ready() -> void:
@@ -61,6 +74,16 @@ func _ready() -> void:
 	if btn and btn is Button:
 		(btn as Button).modulate.a = 0.0
 	_refresh_labels()
+	# Intro fade-in: start the menu at alpha 0 and tween to 1 so the
+	# title appears smoothly when the game boots. Skipped when the
+	# Root is already mostly visible (defensive -- e.g. a re-shown
+	# overlay that was kept at full alpha in the background).
+	if root.modulate.a < 0.999:
+		root.modulate.a = 0.0
+		if _root_tween != null and _root_tween.is_valid():
+			_root_tween.kill()
+		_root_tween = create_tween()
+		_root_tween.tween_property(root, "modulate:a", 1.0, MENU_FADE_IN_SECONDS)
 
 
 func _process(delta: float) -> void:
@@ -101,13 +124,36 @@ func set_difficulty(value: int) -> void:
 	_refresh_labels()
 
 
+## Show the menu. If the menu is currently fading out (or fully
+## hidden), the Root control snaps to alpha 0 and tweens to 1 over
+## MENU_FADE_IN_SECONDS. A re-show on an already-fully-visible
+## menu is a no-op (just refreshes the labels).
 func show_menu() -> void:
+	if _root_tween != null and _root_tween.is_valid():
+		_root_tween.kill()
 	visible = true
 	_refresh_labels()
+	var root := $Root
+	if root.modulate.a < 0.999:
+		root.modulate.a = 0.0
+		_root_tween = create_tween()
+		_root_tween.tween_property(root, "modulate:a", 1.0, MENU_FADE_IN_SECONDS)
 
 
+## Hide the menu with a quick fade-out. The CanvasLayer is left
+## visible until the tween finishes, then `visible` is cleared so
+## the gameplay input reaches the player again. The fade is short
+## enough that the delay between "Enter" and "gameplay reacting" is
+## not noticeable.
 func hide_menu() -> void:
-	visible = false
+	if _root_tween != null and _root_tween.is_valid():
+		_root_tween.kill()
+	var root := $Root
+	_root_tween = create_tween()
+	_root_tween.tween_property(root, "modulate:a", 0.0, MENU_FADE_OUT_SECONDS)
+	_root_tween.tween_callback(func() -> void:
+		visible = false
+	)
 
 
 func _refresh_labels() -> void:
