@@ -27,6 +27,18 @@ func before_each() -> void:
 
 
 func after_each() -> void:
+	# Release any test bullets we acquired so the pool's free list doesn't
+	# grow per test. Each release removes the bullet from the parent
+	# and pushes it onto the per-faction free list.
+	for b: Node in _acquired_test_bullets:
+		if is_instance_valid(b):
+			BulletPool.release(b)
+	_acquired_test_bullets.clear()
+	# Free the per-test ally if the test created one (we don't use
+	# add_child_autofree for it because _main is already in the GUT tree).
+	if _ally_in_test != null and is_instance_valid(_ally_in_test):
+		_ally_in_test.queue_free()
+	_ally_in_test = null
 	_main = null
 
 
@@ -317,3 +329,118 @@ func test_enemy_get_state_shape() -> void:
 	assert_eq(int(state["hp"]), 1, "state.hp should match starting HP")
 	assert_eq(int(state["score_value"]), 10, "state.score_value should be 10 for drone")
 	assert_eq(state["is_dead"], false, "state.is_dead should be false at start")
+
+
+# --- Player-bullet -> enemy integration (0003 + 0002) -----------------
+# The acceptance criteria for task 0003 say "Player bullets destroy
+# enemies on contact (HP per type)". The bullet-vs-generic-target flow
+# is covered in test_bullet.gd, but here we exercise the *actual*
+# enemy classes end-to-end: acquire a real player bullet, call its
+# body_entered handler with a spawned enemy, and assert that the enemy's
+# HP drops by the bullet's damage value.
+
+var _acquired_test_bullets: Array = []
+
+
+func _acquire_player_bullet_against(enemy: Node) -> Node:
+	# Position the bullet at the same global position as the enemy so the
+	# caller can call _on_body_entered without worrying about coordinates.
+	var b: Node = BulletPool.acquire("player", enemy.global_position, _main)
+	# Recycle the bullet in after_each so the pool doesn't grow per test.
+	_acquired_test_bullets.append(b)
+	return b
+
+
+func test_player_bullet_one_hit_kills_drone() -> void:
+	var drone: Node = _spawn("drone")
+	var bullet: Node = _acquire_player_bullet_against(drone)
+	# Bullet._on_body_entered takes a body (Node) and routes through
+	# _can_hit -> take_damage -> _release_self.
+	bullet._on_body_entered(drone)
+	assert_eq(int(drone.hp), 0, "Drone should be at 0 HP after one player bullet")
+	assert_true(bool(drone._is_dead),
+		"Drone should be marked dead after one player bullet")
+
+
+func test_player_bullet_two_hits_kills_fighter() -> void:
+	var fighter: Node = _spawn("fighter")
+	var b1: Node = _acquire_player_bullet_against(fighter)
+	b1._on_body_entered(fighter)
+	assert_eq(int(fighter.hp), 1,
+		"Fighter should have 1 HP after one player bullet")
+	assert_false(bool(fighter._is_dead),
+		"Fighter should NOT be dead after 1 hit (HP=2)")
+	# Acquire a second bullet (the first is in the pool's free list now).
+	var b2: Node = _acquire_player_bullet_against(fighter)
+	b2._on_body_entered(fighter)
+	assert_eq(int(fighter.hp), 0,
+		"Fighter should be at 0 HP after two player bullets")
+	assert_true(bool(fighter._is_dead),
+		"Fighter should be marked dead after 2 hits")
+
+
+func test_player_bullet_four_hits_kills_bomber() -> void:
+	var bomber: Node = _spawn("bomber")
+	for i in range(3):
+		var b: Node = _acquire_player_bullet_against(bomber)
+		b._on_body_entered(bomber)
+		assert_false(bool(bomber._is_dead),
+			"Bomber should NOT be dead at HP %d" % int(bomber.hp))
+	assert_eq(int(bomber.hp), 1,
+		"Bomber should be at 1 HP after three player bullets")
+	var final_bullet: Node = _acquire_player_bullet_against(bomber)
+	final_bullet._on_body_entered(bomber)
+	assert_eq(int(bomber.hp), 0, "Bomber should be at 0 HP after 4 hits")
+	assert_true(bool(bomber._is_dead),
+		"Bomber should be marked dead after 4 hits")
+
+
+func test_player_bullet_killing_drone_credits_score() -> void:
+	# End-to-end: a real bullet hitting a real enemy should trigger the
+	# died signal, which main.gd's _on_enemy_died converts to add_score.
+	var drone: Node = _spawn("drone")
+	assert_eq(_main.score, 0, "Score starts at 0")
+	var bullet: Node = _acquire_player_bullet_against(drone)
+	bullet._on_body_entered(drone)
+	# Died signal already fired; main's _on_enemy_died should have added 10.
+	assert_eq(_main.score, 10,
+		"Score should be 10 after a player bullet kills a drone")
+
+
+func test_player_bullet_killing_bomber_credits_50() -> void:
+	var bomber: Node = _spawn("bomber")
+	for i in range(4):
+		var b: Node = _acquire_player_bullet_against(bomber)
+		b._on_body_entered(bomber)
+	assert_eq(_main.score, 50,
+		"Score should be 50 after a player bullet kills a bomber")
+
+
+func test_player_bullet_on_player_ally_does_not_damage() -> void:
+	# A player bullet should never damage a friendly (the player itself,
+	# another player, or another bullet). _can_hit filters by the `enemy`
+	# group; spawn a fake "ally" target and verify it stays alive and the
+	# bullet is NOT consumed.
+	var ally: Node = Node2D.new()
+	ally.add_to_group("player")
+	_main.add_child(ally)
+	# Note: do NOT add_child_autofree(ally) -- _main is already a child of
+	# the GUT tree, so re-parenting the ally would raise "already has a
+	# parent". We free it explicitly in after_each to keep the test tidy.
+	_ally_in_test = ally
+	var bullet: Node = _acquire_player_bullet_against(ally)
+	# _on_body_entered will see group=player, faction=player -> skip.
+	bullet._on_body_entered(ally)
+	# Bullet should still have a parent (not released).
+	assert_eq(bullet.get_parent(), _main,
+		"Bullet should stay in tree when target is in friendly group")
+	# Sanity: the ally itself was not damaged (no take_damage method on
+	# a bare Node2D, so this is implicit; the contract is "the bullet
+	# didn't try to call take_damage on a non-enemy group").
+	assert_true(is_instance_valid(ally), "Ally target should still be valid")
+
+
+# Tracked so after_each can free the per-test ally that we parented to
+# _main. We avoid add_child_autofree(ally) here because _main is already
+# in the GUT tree and re-parenting the ally would fail the precondition.
+var _ally_in_test: Node = null
