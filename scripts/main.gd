@@ -283,6 +283,12 @@ var _boss_difficulty_hp_mult: float = 1.0
 ## Menu -> Playing handler. Called when the player presses Enter on
 ## the start menu.
 func _on_menu_start_pressed() -> void:
+	# Confirm the press with a short positive cue so the player gets
+	# audio feedback that their key registered (the prompt pulse is
+	# visual-only and easy to miss). The pickup arpeggio is the same
+	# SFX used for power-up collection, which is the right "good
+	# thing happened" signal in this game's vocabulary.
+	_play_sfx("pickup")
 	begin_session()
 
 
@@ -298,6 +304,10 @@ func _on_menu_exit_pressed() -> void:
 ## Enter on the game-over screen. Same effect as begin_session()
 ## but the explicit name makes the signal-routing readable.
 func _on_game_over_restart_pressed() -> void:
+	# Same audio confirmation as the start menu -- the player just
+	# died and is starting fresh, so a positive arpeggio matches
+	# the "let's try again" tone.
+	_play_sfx("pickup")
 	begin_session()
 
 
@@ -306,6 +316,10 @@ func _on_game_over_restart_pressed() -> void:
 ## completed a full run), then transitions back to MENU so the next
 ## Start begins a more difficult run.
 func _on_victory_continue_pressed() -> void:
+	# Confirm the press with the same pickup cue as the other
+	# menu-confirmation handlers -- the player just beat the game,
+	# so positive audio fits the moment.
+	_play_sfx("pickup")
 	# Increment difficulty on the loop transition. The increment
 	# happens BEFORE we show the menu so the menu's "DIFFICULTY  N+1"
 	# line is accurate on the very next frame.
