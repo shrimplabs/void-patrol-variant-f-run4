@@ -109,11 +109,9 @@ func scroll(delta: float) -> void:
 
 
 ## Override _process to auto-scroll. Tests can disable auto-scroll by
-## setting `process_mode = PROCESS_MODE_MANUAL` and calling `scroll(dt)`
-## themselves.
+## setting `process_mode = Node.PROCESS_MODE_DISABLED` (= 4) and calling
+## `scroll(dt)` themselves.
 func _process(delta: float) -> void:
-	# `Node.PROCESS_MODE_DISABLED` (= 4) and skip auto-scroll, letting
-	# tests drive the parallax by calling `scroll(dt)` themselves.
 	if process_mode == Node.PROCESS_MODE_DISABLED:
 		return
 	scroll(delta)

@@ -35,6 +35,24 @@ func _ready() -> void:
 		bullet_scene = load(DEFAULT_BULLET_SCENE)
 
 
+# Cleanup hook. When the autoload is torn down at process exit, the
+# `_free` array still references the pooled Bullet Nodes (we detach
+# them from the scene tree on `release()` so a recycled bullet isn't
+# parented to its previous shooter). The bullets themselves are still
+# real Node instances with RIDs and ObjectDB slots -- without this
+# hook they would leak past process exit. We free them explicitly in
+# `_exit_tree()` (the autoload's last hook before its own Node is
+# destroyed). We don't have to worry about double-freeing because
+# `_free` is the only place that holds detached bullets.
+func _exit_tree() -> void:
+	for faction_name in _free.keys():
+		var free_list: Array = _free[faction_name]
+		for b: Node in free_list:
+			if is_instance_valid(b):
+				b.free()
+		free_list.clear()
+
+
 func acquire(
 	faction: String,
 	spawn_position: Vector2,
