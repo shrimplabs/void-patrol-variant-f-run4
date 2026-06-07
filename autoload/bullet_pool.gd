@@ -45,9 +45,15 @@ func _ready() -> void:
 # destroyed). We don't have to worry about double-freeing because
 # `_free` is the only place that holds detached bullets.
 func _exit_tree() -> void:
+	# Walk the per-faction free list and `free()` every still-alive
+	# bullet. We iterate by index (instead of `for b: Node in ...`) so
+	# the typed-array bind doesn't trip on a stale freed-Node reference
+	# during the autoload teardown (mirrors the defensive pattern in
+	# `acquire()`).
 	for faction_name in _free.keys():
 		var free_list: Array = _free[faction_name]
-		for b: Node in free_list:
+		for i in range(free_list.size()):
+			var b = free_list[i]
 			if is_instance_valid(b):
 				b.free()
 		free_list.clear()
