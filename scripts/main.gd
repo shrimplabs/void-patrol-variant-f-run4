@@ -136,6 +136,15 @@ func _on_wave_cleared(_wave_number: int) -> void:
 	# Game-flow integration point: a cleared wave could refill lives or
 	# grant a small score bonus. The full game-flow design lives in
 	# task 0007; for now we just leave a checkpoint hook for the harness.
+	#
+	# Guard the absolute-path lookup with is_inside_tree(): signal
+	# callbacks can fire during GUT's free_all teardown, at which point
+	# `self` is no longer in the active scene tree and get_node() with
+	# absolute paths raises "Can't use get_node() with absolute paths
+	# from outside the active scene tree". The harness is a no-op for
+	# us when we're tearing down anyway, so silently skip the checkpoint.
+	if not is_inside_tree():
+		return
 	var harness := get_node_or_null("/root/TestHarness")
 	if harness != null and harness.has_method("checkpoint"):
 		harness.checkpoint({"event": "wave_cleared", "wave": _wave_number_for_harness()})
@@ -168,6 +177,8 @@ func _on_boss_fight_started() -> void:
 			boss_node.defeated.connect(_on_boss_defeated)
 		if boss_node.has_signal("died"):
 			boss_node.died.connect(_on_boss_died_score)
+	if not is_inside_tree():
+		return
 	var harness := get_node_or_null("/root/TestHarness")
 	if harness != null and harness.has_method("checkpoint"):
 		harness.checkpoint({"event": "boss_fight_started"})
@@ -181,7 +192,10 @@ func _on_boss_defeated() -> void:
 	victory = true
 	if wave_manager != null and wave_manager.has_method("notify_boss_defeated"):
 		wave_manager.notify_boss_defeated()
-	# QA checkpoint for the test harness.
+	# QA checkpoint for the test harness. Guard the absolute-path
+	# lookup so a late signal during GUT teardown doesn't ERROR.
+	if not is_inside_tree():
+		return
 	var harness := get_node_or_null("/root/TestHarness")
 	if harness != null and harness.has_method("checkpoint"):
 		harness.checkpoint({"event": "boss_defeated", "score": score})
@@ -426,6 +440,11 @@ func _on_player_powerup_changed(kind: int, type_name: String, remaining: float) 
 		hud.set_active_powerup(type_name, remaining)
 	# QA checkpoint (fire-and-forget). Failure to find the harness is
 	# benign: it just means we're not running under the test harness.
+	# Guard the absolute-path lookup against late signal callbacks
+	# fired during GUT teardown (when `self` is no longer in the
+	# active scene tree, get_node() with absolute paths raises).
+	if not is_inside_tree():
+		return
 	var harness := get_node_or_null("/root/TestHarness")
 	if harness != null and harness.has_method("checkpoint"):
 		harness.checkpoint({"event": "powerup_changed", "kind": kind, "name": type_name, "remaining": remaining})
