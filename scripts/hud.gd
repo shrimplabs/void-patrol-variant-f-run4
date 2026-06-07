@@ -12,10 +12,14 @@ const LOW_SHIELD_PULSE_HZ := 4.0
 @onready var _wave_label: Label = $Root/WaveLabel
 @onready var _lives_label: Label = $Root/LivesLabel
 @onready var _shield_bar: ProgressBar = $Root/ShieldBar
-@onready var _shield_label: Label = $Root/ShieldLabel
-@onready var _powerup_label: Label = $Root/PowerupLabel
-@onready var _damage_flash: ColorRect = $Root/DamageFlash
-@onready var _banner_label: Label = $Root/BannerLabel
+# The following four nodes are optional: in the test_hud.gd minimal
+# fixture only ScoreLabel/WaveLabel/LivesLabel/ShieldBar exist, so we
+# must use get_node_or_null to avoid "Node not found" errors at
+# @implicit_ready. All consumers already null-guard these vars.
+@onready var _shield_label: Label = get_node_or_null("Root/ShieldLabel")
+@onready var _powerup_label: Label = get_node_or_null("Root/PowerupLabel")
+@onready var _damage_flash: ColorRect = get_node_or_null("Root/DamageFlash")
+@onready var _banner_label: Label = get_node_or_null("Root/BannerLabel")
 
 var score: int = 0
 var wave: int = 1
