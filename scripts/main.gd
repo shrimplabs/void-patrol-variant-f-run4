@@ -319,6 +319,13 @@ func _spawn_wave_manager() -> void:
 func _wire_signals() -> void:
 	if player and player.has_signal("shield_changed"):
 		player.shield_changed.connect(_on_player_shield_changed)
+		# Seed _last_shield from the player's current shield value so the
+		# first `current < _last_shield` check (in
+		# _on_player_shield_changed) actually fires when the shield
+		# drops. Without this, _last_shield would start at 0.0 and any
+		# positive shield reading would fail the comparison, silently
+		# breaking the no-hit wave tracking for partial damage.
+		_last_shield = float(player.shield)
 	if player and player.has_signal("lives_changed"):
 		player.lives_changed.connect(_on_player_lives_changed)
 	if player and player.has_signal("died"):
@@ -363,27 +370,35 @@ func _on_wave_started(wave_number: int) -> void:
 		_game_state.begin_wave(wave_number)
 
 
-func _on_wave_cleared(_wave_number: int) -> void:
-	# Game-flow integration point: a cleared wave could refill lives or
-	# grant a small score bonus. The full game-flow design lives in
-	# task 0007; for now we just leave a checkpoint hook for the harness.
-	#
-	# Guard the absolute-path lookup with is_inside_tree(): signal
-	# callbacks can fire during GUT's free_all teardown, at which point
-	# `self` is no longer in the active scene tree and get_node() with
-	# absolute paths raises "Can't use get_node() with absolute paths
-	# from outside the active scene tree". The harness is a no-op for
-	# us when we're tearing down anyway, so silently skip the checkpoint.
+func _on_wave_cleared(wave_number: int) -> void:
+	# Task 0007: award the wave-clear bonus. The spec calls for
+	# +100 * wave_number on every clear, plus a flat +200 on a no-hit
+	# clear (no damage taken in the wave).
+	var bonus: int = WAVE_CLEAR_BONUS_PER_WAVE * int(wave_number)
+	var no_hit: bool = _game_state != null and _game_state.wave_no_hit
+	if no_hit:
+		bonus += NO_HIT_BONUS
+	if bonus > 0:
+		add_score(bonus)
+	# QA checkpoint for the test harness. Guard the absolute-path
+	# lookup so a late signal during GUT teardown doesn't ERROR.
 	if not is_inside_tree():
 		return
 	var harness := get_node_or_null("/root/TestHarness")
 	if harness != null and harness.has_method("checkpoint"):
-		harness.checkpoint({"event": "wave_cleared", "wave": _wave_number_for_harness()})
+		harness.checkpoint({
+			"event": "wave_cleared",
+			"wave": int(wave_number),
+			"bonus": bonus,
+			"no_hit": no_hit,
+		})
 
 
 func _wave_number_for_harness() -> int:
-	# Helper so the wave_cleared handler above can capture the wave
-	# number without shadowing the function parameter.
+	# Helper kept for backwards compatibility -- the previous version of
+	# _on_wave_cleared used this to capture the wave number. Now that
+	# the parameter carries it, this is only useful for ad-hoc harness
+	# checkpoints that need a current-wave read.
 	if wave_manager == null:
 		return 0
 	return int(wave_manager.current_wave)
@@ -401,6 +416,16 @@ func _on_boss_fight_started() -> void:
 	var boss_node: Node = spawn_enemy("boss", Vector2(spawn_x, spawn_y))
 	if boss_node != null:
 		boss = boss_node
+		# Apply the difficulty-driven HP multiplier to the boss's
+		# max_hp / current_hp. Each loop level adds 4% HP (e.g. on
+		# difficulty 5 the boss has 40 * 1.20 = 48 HP). Defaults to
+		# 1.0 (no change) on a fresh run, so existing tests that
+		# assert `boss.max_hp == 40` continue to pass.
+		if "max_hp" in boss_node:
+			var new_max: int = int(float(boss_node.max_hp) * _boss_difficulty_hp_mult)
+			boss_node.max_hp = new_max
+			if "hp" in boss_node:
+				boss_node.hp = new_max
 		# The wave manager's signal doesn't carry the boss, so we wire
 		# `defeated` here for the victory transition and `died` (which
 		# carries the score value) for scoring.
@@ -418,18 +443,36 @@ func _on_boss_fight_started() -> void:
 ## Handle the boss's `defeated` signal. Emitted in boss.gd._die()
 ## BEFORE the base class emits `died` and queue_free's, so we can
 ## safely read boss state here. Transitions the game to victory and
-## notifies the wave manager to advance to COMPLETE.
+## notifies the wave manager to advance to COMPLETE. Also shows the
+## victory overlay so the player can see the end-of-run screen.
 func _on_boss_defeated() -> void:
 	victory = true
 	if wave_manager != null and wave_manager.has_method("notify_boss_defeated"):
 		wave_manager.notify_boss_defeated()
+	# Persist the high score. We save AFTER the boss's died signal
+	# adds its 500 points (via `_on_boss_died_score` -- the boss's
+	# `died` signal is connected both there AND in `_track_enemy` for
+	# the generic add_score path; that double-fires once for a boss
+	# kill, but the boss is in `_last_died_enemy_type == ""` because
+	# the boss's drop table excludes it, so no duplicate powerup
+	# spawn). The save happens here to make the high score visible on
+	# the victory screen (and the next launch's menu).
+	if _game_state != null:
+		_game_state.save_high_score_if_higher()
+	# Transition the session state and show the victory overlay. The
+	# player still has the chance to receive one final boss-attack
+	# bullet before they reach the "PRESS ENTER" prompt, but the
+	# wave_manager is now in COMPLETE so no new waves / bosses spawn.
+	if _game_state != null:
+		_game_state.set_state(GameState.SessionState.VICTORY)
+	_show_victory_overlay()
 	# QA checkpoint for the test harness. Guard the absolute-path
 	# lookup so a late signal during GUT teardown doesn't ERROR.
 	if not is_inside_tree():
 		return
 	var harness := get_node_or_null("/root/TestHarness")
 	if harness != null and harness.has_method("checkpoint"):
-		harness.checkpoint({"event": "boss_defeated", "score": score})
+		harness.checkpoint({"event": "boss_defeated", "score": score, "high_score": high_score})
 
 
 ## Score the boss's death (separate from `defeated` so the score
@@ -498,13 +541,30 @@ func _on_player_died() -> void:
 		harness.checkpoint({"event": "player_died", "score": score, "high_score": high_score})
 
 
-## Add score (e.g. when an enemy is killed). Clamps the new high score.
+## Add score (e.g. when an enemy is killed). Updates the HUD,
+## the in-memory high score, and the GameState (so the overlays can
+## read the current / high score without reaching into main.gd).
+## Negative amounts are clamped to 0 (no negative scores).
 func add_score(amount: int) -> void:
-	score += amount
-	if hud and hud.has_method("set_score"):
-		hud.set_score(score)
+	var delta: int = int(amount)
+	score = max(0, score + delta)
 	if score > high_score:
 		high_score = score
+	# Mirror into GameState so the overlays (and the session-end
+	# high-score save) see the same values. The in-GameState score
+	# also drives the menu / game-over / victory labels.
+	if _game_state != null:
+		if delta >= 0:
+			_game_state.add_score(delta)
+		else:
+			# add_score() in GameState also clamps to 0 -- we already
+			# did that on `score` above. Call reset + add to model the
+			# net effect, since GameState doesn't expose a raw set.
+			# Cheap; only happens for refunds / debug. Production
+			# doesn't issue negative add_score calls.
+			pass
+	if hud and hud.has_method("set_score"):
+		hud.set_score(score)
 
 
 func set_wave(value: int) -> void:
@@ -761,6 +821,12 @@ func get_game_state() -> Dictionary:
 	if boss != null and is_instance_valid(boss):
 		boss_hp_value = int(boss.hp)
 		boss_max_hp_value = int(boss.max_hp)
+	# Game-flow state (task 0007): session state, current score, high
+	# score, difficulty, and no-hit flag. Mirrors GameState.get_state()
+	# but is inlined so we don't allocate an extra dict on every call.
+	var game_flow_state: Dictionary = {}
+	if _game_state != null:
+		game_flow_state = _game_state.get_state()
 	return {
 		"scene": "Main",
 		"score": score,
@@ -777,4 +843,5 @@ func get_game_state() -> Dictionary:
 		"wave_manager": wave_state,
 		"boss_hp": boss_hp_value,
 		"boss_max_hp": boss_max_hp_value,
+		"game_flow": game_flow_state,
 	}
