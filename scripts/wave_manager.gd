@@ -173,6 +173,23 @@ func is_wave_clear() -> bool:
 	return _alive_spawned.is_empty()
 
 
+## Public: called by main.gd when the boss has been defeated.
+## Transitions the state machine from BOSS_FIGHT to COMPLETE (the
+## "victory" terminal state). The wave manager does not spawn or
+## track the boss itself -- it only owns the post-boss state
+## transition so the game-flow layer (task 0007) can branch on
+## `state == State.COMPLETE` to show the victory screen.
+##
+## No-op if the manager is not currently in BOSS_FIGHT (e.g. the
+## caller forgot to wait for the boss_fight_started signal). This
+## keeps the state machine's transitions strict and prevents
+## double-completion.
+func notify_boss_defeated() -> void:
+	if state != State.BOSS_FIGHT:
+		return
+	state = State.COMPLETE
+
+
 ## Public: count of enemies the current wave has spawned that are
 ## still alive. Useful for HUD / StateServer / QA reporting.
 func get_alive_count() -> int:

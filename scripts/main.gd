@@ -16,6 +16,7 @@ const ENEMY_SCENES := {
 	"drone": "res://scenes/enemy_drone.tscn",
 	"fighter": "res://scenes/enemy_fighter.tscn",
 	"bomber": "res://scenes/enemy_bomber.tscn",
+	"boss": "res://scenes/boss.tscn",
 }
 
 var score: int = 0
@@ -23,6 +24,14 @@ var wave: int = 1
 var high_score: int = 0
 var bombs: int = 0
 var game_over: bool = false
+## True after the player defeats the boss (task 0005). Distinct from
+## `game_over` (player death); both can technically be true if the
+## boss's final attack kills the player, but victory is the headline
+## flag for the StateServer / HUD victory banner.
+var victory: bool = false
+## Live reference to the currently-spawned boss, or null if no boss is
+## active. Used by `get_game_state()` to report `boss_hp`.
+var boss: Node = null
 
 var player: Node = null
 var hud: CanvasLayer = null
@@ -144,9 +153,53 @@ func _on_boss_fight_started() -> void:
 	# Update the global wave counter to 7 (per design doc). The boss
 	# itself is task 0005's responsibility; this only updates state.
 	set_wave(wave_manager.current_wave if wave_manager else 7)
+	# Spawn the boss at the top-center of the arena. The boss script
+	# (scripts/boss.gd) handles the entry animation: it starts above
+	# the viewport, drifts down to BATTLE_Y, then sweeps horizontally.
+	var spawn_x: float = 576.0  # viewport center for the 1152-wide arena
+	var spawn_y: float = -48.0  # just above the top of the screen
+	var boss_node: Node = spawn_enemy("boss", Vector2(spawn_x, spawn_y))
+	if boss_node != null:
+		boss = boss_node
+		# The wave manager's signal doesn't carry the boss, so we wire
+		# `defeated` here for the victory transition and `died` (which
+		# carries the score value) for scoring.
+		if boss_node.has_signal("defeated"):
+			boss_node.defeated.connect(_on_boss_defeated)
+		if boss_node.has_signal("died"):
+			boss_node.died.connect(_on_boss_died_score)
 	var harness := get_node_or_null("/root/TestHarness")
 	if harness != null and harness.has_method("checkpoint"):
 		harness.checkpoint({"event": "boss_fight_started"})
+
+
+## Handle the boss's `defeated` signal. Emitted in boss.gd._die()
+## BEFORE the base class emits `died` and queue_free's, so we can
+## safely read boss state here. Transitions the game to victory and
+## notifies the wave manager to advance to COMPLETE.
+func _on_boss_defeated() -> void:
+	victory = true
+	if wave_manager != null and wave_manager.has_method("notify_boss_defeated"):
+		wave_manager.notify_boss_defeated()
+	# QA checkpoint for the test harness.
+	var harness := get_node_or_null("/root/TestHarness")
+	if harness != null and harness.has_method("checkpoint"):
+		harness.checkpoint({"event": "boss_defeated", "score": score})
+
+
+## Score the boss's death (separate from `defeated` so the score
+## addition happens after the base class's `died` signal which carries
+## the score value -- we use add_score() which also updates the HUD
+## and high_score). The boss's `died` signal is connected by
+## `_track_enemy` too, so it will also go through `_on_enemy_died`
+## for the generic add_score path. We don't double-credit because
+## `_on_enemy_died` reads from `_last_died_enemy_type` which we set
+## in the snapshot; the boss's `enemy_type_name` is "boss" and the
+## drop table excludes bosses, so no powerup spawns.
+func _on_boss_died_score(score_value: int) -> void:
+	# Add the boss's score explicitly; this also flows through the
+	# normal add_score() path (updates HUD + high_score).
+	add_score(int(score_value))
 
 
 var _last_shield: float = 0.0
@@ -420,6 +473,15 @@ func get_game_state() -> Dictionary:
 	var wave_state: Dictionary = {}
 	if wave_manager and wave_manager.has_method("get_state"):
 		wave_state = wave_manager.get_state()
+	# Boss HP snapshot. 0 means "no boss alive" (either pre-spawn or
+	# post-defeat). The StateServer / HUD use this to render a boss bar
+	# during the boss fight; we report it even when 0 so consumers can
+	# rely on a stable key shape.
+	var boss_hp_value: int = 0
+	var boss_max_hp_value: int = 0
+	if boss != null and is_instance_valid(boss):
+		boss_hp_value = int(boss.hp)
+		boss_max_hp_value = int(boss.max_hp)
 	return {
 		"scene": "Main",
 		"score": score,
@@ -427,10 +489,13 @@ func get_game_state() -> Dictionary:
 		"high_score": high_score,
 		"bombs": bombs,
 		"game_over": game_over,
+		"victory": victory,
 		"player": player_state,
 		"hud": hud_state,
 		"enemies": enemy_states,
 		"enemy_count": enemy_states.size(),
 		"enemy_counts_by_type": counts,
 		"wave_manager": wave_state,
+		"boss_hp": boss_hp_value,
+		"boss_max_hp": boss_max_hp_value,
 	}
