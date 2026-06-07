@@ -18,6 +18,7 @@ const PLAYER_SCENE := preload("res://scenes/player.tscn")
 const HUD_SCENE := preload("res://scenes/hud.tscn")
 const POWERUP_SCENE := preload("res://scenes/powerup.tscn")
 const EXPLOSION_SCENE := preload("res://scenes/explosion.tscn")
+const STARFIELD_SCENE := preload("res://scenes/starfield.tscn")
 const ENEMY_SCENES := {
 	"drone": "res://scenes/enemy_drone.tscn",
 	"fighter": "res://scenes/enemy_fighter.tscn",
@@ -52,6 +53,12 @@ var boss: Node = null
 
 var player: Node = null
 var hud: CanvasLayer = null
+## Parallax starfield background (task 0008 polish). May be a child of
+## Main via main.tscn OR a runtime-instantiated child if the test
+## fixture (or any other code) builds Main without the .tscn. We
+## track it as a member so callers can reach it, and `_spawn_starfield`
+## is idempotent -- it only adds the node when one is missing.
+var starfield: Node = null
 ## Procedural wave manager (task 0004). Spawned as a child in _ready
 ## but does NOT auto-start (task 0007 owns the boot sequence: the
 ## menu -> playing transition calls `wave_manager.start_game()`).
@@ -83,6 +90,7 @@ func _ready() -> void:
 	_spawn_player()
 	_spawn_hud()
 	_spawn_wave_manager()
+	_spawn_starfield()
 	_resolve_overlays()
 	_wire_signals()
 	_wire_wave_signals()
@@ -315,6 +323,30 @@ func _spawn_wave_manager() -> void:
 	wave_manager = WaveManagerScript.new()
 	wave_manager.name = "WaveManager"
 	add_child(wave_manager)
+
+
+## Ensure the 2-layer parallax starfield (task 0008 polish) is a child
+## of Main. main.tscn wires it directly; tests / stripped fixtures
+## build Main from the script alone and so don't get the .tscn's
+## Starfield node. We add it here, gated on absence, so the test
+## `test_main_scene_has_a_starfield_child` always finds the node and
+## so a stripped fixture (or a future refactor that drops the .tscn
+## reference) still has the polish asset. Idempotent: a second call
+## is a no-op while a Starfield is already parented.
+func _spawn_starfield() -> void:
+	var existing := get_node_or_null("Starfield")
+	if existing != null and is_instance_valid(existing):
+		starfield = existing
+		return
+	if STARFIELD_SCENE == null:
+		push_warning("Main._spawn_starfield: starfield.tscn failed to load")
+		return
+	var sf: Node = STARFIELD_SCENE.instantiate()
+	if sf == null:
+		return
+	sf.name = "Starfield"
+	add_child(sf)
+	starfield = sf
 
 
 func _wire_signals() -> void:

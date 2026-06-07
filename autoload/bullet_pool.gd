@@ -20,6 +20,13 @@ extends Node
 ## colliding with the autoload identifier).
 
 const DEFAULT_BULLET_SCENE := "res://scenes/bullet.tscn"
+## Per-faction cap on the free list. Bounds memory usage in long test
+## runs and pathological in-game bursts (boss phase 3 fires 18 bullets
+## in one frame, etc.). When the cap is hit, the oldest pooled bullet
+## is freed so the next acquire() will instantiate a fresh one. Sized
+## to comfortably cover a normal game session's working set while
+## keeping the orphan-Node footprint small.
+const MAX_FREE_LIST_SIZE := 8
 
 @export var bullet_scene: PackedScene
 
@@ -116,7 +123,19 @@ func release(bullet: Node) -> void:
 	var parent := bullet.get_parent()
 	if parent:
 		parent.remove_child(bullet)
+	# Cap the free list to bound memory usage. In a long test run (or a long
+	# game session with many waves), the free list can accumulate bullets that
+	# aren't being reused. Capping the list frees the excess so they don't
+	# pile up as orphan Nodes at end of test, which can OOM the Godot process
+	# in memory-constrained verification environments. In production the cap
+	# is rarely hit (steady state keeps the free list small), but the bound
+	# is cheap insurance against pathological bursts (boss phase 3 fires 18
+	# bullets in one frame, etc.).
 	free_list.append(bullet)
+	while free_list.size() > MAX_FREE_LIST_SIZE:
+		var old = free_list.pop_front()
+		if is_instance_valid(old):
+			old.free()
 	_stats[faction_name]["alive"] = max(0, int(_stats[faction_name]["alive"]) - 1)
 	_refresh_stats(faction_name, free_list)
 
