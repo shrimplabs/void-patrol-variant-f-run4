@@ -1,6 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://b1enemydrone01"]
+[gd_scene load_steps=4 format=3 uid="uid://b1enemydrone01"]
 
 [ext_resource type="Script" path="res://scripts/enemy_drone.gd" id="1_drone"]
+
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy_drone.png" id="2_drone_sprite"]
 
 [sub_resource type="RectangleShape2D" id="RectShape2D_drone"]
 size = Vector2(20, 20)
@@ -11,8 +13,9 @@ script = ExtResource("1_drone")
 [node name="Shape" type="CollisionShape2D" parent="."]
 shape = SubResource("RectShape2D_drone")
 
-[node name="Visual" type="Polygon2D" parent="."]
-color = Color(0.7, 0.85, 0.5, 1)
-polygon = PackedVector2Array(0, 10, -10, -8, 0, -4, 10, -8)
+[node name="Visual" type="Sprite2D" parent="."]
+texture = ExtResource("2_drone_sprite")
+centered = true
+offset = Vector2(0, 0)
 
 [node name="VisibleOnScreenNotifier2D" type="VisibleOnScreenNotifier2D" parent="."]

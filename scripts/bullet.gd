@@ -32,7 +32,7 @@ var pool: Node = null
 ## another node's state.
 var last_damage: int = 0
 
-@onready var _visual: Polygon2D = get_node_or_null("Visual")
+@onready var _visual: CanvasItem = get_node_or_null("Visual")
 
 
 func _ready() -> void:
@@ -70,7 +70,7 @@ func _apply_faction() -> void:
 	if _visual == null:
 		return
 	var c: Color = PLAYER_COLOR if faction == "player" else ENEMY_COLOR
-	_visual.color = c
+	_visual.modulate = c
 
 
 func _on_screen_exited() -> void:

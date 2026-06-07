@@ -1,6 +1,12 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Texture2D" path="res://assets/backgrounds/starfield.png" id="2_starfield"]
 
 [node name="Main" type="Node"]
 script = ExtResource("1_main")
+
+[node name="Background" type="Sprite2D" parent="."]
+position = Vector2(576, 324)
+texture = ExtResource("2_starfield")
+centered = true

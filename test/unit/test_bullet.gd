@@ -72,23 +72,23 @@ func test_enemy_bullet_direction_is_vector2_down() -> void:
 
 func test_player_bullet_uses_cyan_color() -> void:
 	var b: Bullet = _acquire_player(Vector2.ZERO)
-	var visual: Polygon2D = b.get_node("Visual")
-	assert_almost_eq(visual.color.r, BULLET_SCRIPT.PLAYER_COLOR.r, 0.01,
+	var visual: Sprite2D = b.get_node("Visual")
+	assert_almost_eq(visual.modulate.r, BULLET_SCRIPT.PLAYER_COLOR.r, 0.01,
 		"player red channel")
-	assert_almost_eq(visual.color.g, BULLET_SCRIPT.PLAYER_COLOR.g, 0.01,
+	assert_almost_eq(visual.modulate.g, BULLET_SCRIPT.PLAYER_COLOR.g, 0.01,
 		"player green channel")
-	assert_almost_eq(visual.color.b, BULLET_SCRIPT.PLAYER_COLOR.b, 0.01,
+	assert_almost_eq(visual.modulate.b, BULLET_SCRIPT.PLAYER_COLOR.b, 0.01,
 		"player blue channel")
 
 
 func test_enemy_bullet_uses_orange_color() -> void:
 	var b: Bullet = _acquire_enemy(Vector2.ZERO)
-	var visual: Polygon2D = b.get_node("Visual")
-	assert_almost_eq(visual.color.r, BULLET_SCRIPT.ENEMY_COLOR.r, 0.01,
+	var visual: Sprite2D = b.get_node("Visual")
+	assert_almost_eq(visual.modulate.r, BULLET_SCRIPT.ENEMY_COLOR.r, 0.01,
 		"enemy red channel")
-	assert_almost_eq(visual.color.g, BULLET_SCRIPT.ENEMY_COLOR.g, 0.01,
+	assert_almost_eq(visual.modulate.g, BULLET_SCRIPT.ENEMY_COLOR.g, 0.01,
 		"enemy green channel")
-	assert_almost_eq(visual.color.b, BULLET_SCRIPT.ENEMY_COLOR.b, 0.01,
+	assert_almost_eq(visual.modulate.b, BULLET_SCRIPT.ENEMY_COLOR.b, 0.01,
 		"enemy blue channel")
 
 
