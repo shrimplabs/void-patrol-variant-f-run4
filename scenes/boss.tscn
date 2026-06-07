@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/boss.gd" id="1_boss"]
 
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy_bomber.png" id="2_boss_sprite"]
+[ext_resource type="Texture2D" path="res://assets/sprites/boss_ship.png" id="2_boss_sprite"]
 
 [sub_resource type="RectangleShape2D" id="RectShape2D_boss_body"]
 size = Vector2(96, 48)
@@ -24,12 +24,11 @@ shape = SubResource("RectShape2D_boss_weak")
 texture = ExtResource("2_boss_sprite")
 centered = true
 offset = Vector2(0, 0)
-scale = Vector2(3, 1.5)
 
 [node name="WeakPointVisual" type="Sprite2D" parent="."]
 position = Vector2(0, 0)
-scale = Vector2(1.4, 1.4)
 modulate = Color(1.0, 0.95, 0.3, 1.0)
+visible = false
 texture = ExtResource("2_boss_sprite")
 centered = true
 offset = Vector2(0, 0)
