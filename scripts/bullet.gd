@@ -15,6 +15,15 @@ const ENEMY_COLOR: Color = Color(1.0, 0.45, 0.2, 1.0)
 const PLAYER_SPEED: float = 600.0
 const ENEMY_SPEED: float = 420.0
 const DEFAULT_DAMAGE: int = 1
+## Hard upper bound on how long a single bullet may live, in seconds.
+## Acts as a safety net alongside the `VisibleOnScreenNotifier2D`
+## `screen_exited` signal, which can fail to fire (e.g. when the notifier
+## was spawned already off-screen, in headless mode without a real
+## rendering pipeline, or with a degenerate Rect). At the player bullet's
+## 600 px/s top speed this covers ~3000 px of travel, more than enough
+## for any reasonable viewport; in practice bullets despawn on the
+## notifier long before this cap.
+const MAX_LIFETIME: float = 5.0
 
 @export var speed: float = PLAYER_SPEED
 @export var damage: int = DEFAULT_DAMAGE
@@ -31,6 +40,10 @@ var pool: Node = null
 ## tests and tooling can assert "no damage applied" without inspecting
 ## another node's state.
 var last_damage: int = 0
+## Seconds since the bullet was last configured by `setup()`. Used to
+## force a despawn via `MAX_LIFETIME` even when the screen notifier does
+## not fire (headless mode, off-screen spawn, etc.).
+var _lifetime: float = 0.0
 
 @onready var _visual: CanvasItem = get_node_or_null("Visual")
 
@@ -39,6 +52,12 @@ func _ready() -> void:
 	add_to_group("bullets")
 	var notifier := get_node_or_null("VisibleOnScreenNotifier2D")
 	if notifier:
+		# Make the notifier's rect explicit so screen_exited fires reliably
+		# even when a bullet is spawned with a zero-size default rect (the
+		# default `Rect` of `VisibleOnScreenNotifier2D` is degenerate on
+		# some Godot builds and never reports screen_exited until it is
+		# overridden). 32x32 covers a generous area around the bullet.
+		notifier.rect = Rect2(-16, -16, 32, 32)
 		notifier.screen_exited.connect(_on_screen_exited)
 	# Connect collision signals for body and area targets.
 	if not body_entered.is_connected(_on_body_entered):
@@ -59,11 +78,22 @@ func setup(faction_value: String, spawn_position: Vector2, speed_override: float
 	if _visual == null:
 		_visual = get_node_or_null("Visual")
 	global_position = spawn_position
+	# Reset the lifetime cap so a re-acquired pooled bullet doesn't carry
+	# the previous shot's accumulated time and immediately get released.
+	_lifetime = 0.0
 	_apply_faction()
 
 
 func _physics_process(delta: float) -> void:
 	position += direction * speed * delta
+	_lifetime += delta
+	# Safety net for the screen notifier. If the notifier never fires
+	# (headless rendering, off-screen spawn, degenerate rect on a custom
+	# notifier, etc.) the bullet would otherwise accumulate forever in the
+	# scene tree. `MAX_LIFETIME` is sized to far exceed any reasonable
+	# viewport crossing, so legitimate gameplay is unaffected.
+	if _lifetime >= MAX_LIFETIME:
+		_release_self()
 
 
 func _apply_faction() -> void:
