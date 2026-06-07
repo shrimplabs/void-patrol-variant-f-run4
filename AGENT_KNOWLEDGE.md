@@ -106,3 +106,61 @@ Key rules:
 - For damage-vs-regen differentiation, track `_last_shield` in the signal handler and only call `flash_damage(...)` when `current < _last_shield`.
 
 Recurring gotcha: HUD label `text` strings should use double-space alignment ("SCORE  0") — single colon formats ("SCORE: 0") feel cramped next to a numeric value.
+
+---
+## boss.gd _die() ordering gotcha (void-patrol-variant-f-run4)
+
+`boss.gd` extends `enemy_base.gd` and overrides `_die()` to emit a
+`defeated()` signal before the base class emits `died(score_value)`
+and `queue_free()`s the node.
+
+CRITICAL: do NOT set `_is_dead = true` in the boss's `_die()` before
+calling `super._die()`. The base class guards `_die()` with
+`if _is_dead: return`, so pre-setting it short-circuits the base and
+the `died` signal never fires. That breaks `_on_enemy_died`
+scoring on the main scene (no +500 on kill).
+
+Correct pattern:
+```gdscript
+func _die() -> void:
+    if _is_dead:
+        return
+    defeated.emit()
+    super._die()  # base sets _is_dead, emits died, queue_frees
+```
+
+## Boss fire-method _is_dead guard
+
+The boss's three fire methods (`_fire_aimed_shot`, `_fire_spread_burst`,
+`_fire_rotating_ring`) MUST each start with `if _is_dead: return`.
+The boss's `_physics_process` already early-returns on `_is_dead`,
+so that path is safe. But test fixtures (and any future code that
+calls fire methods directly) bypass `_physics_process` and need
+the guard. Without it, tests that `take_damage(40)` and then call
+fire methods either leak bullets into the scene tree (the boss is
+queue_freed at the next idle frame, but the bullets it spawned live
+on) or crash on a freed-instance call.
+
+## Boss Area2D shape ordering (boss.tscn)
+
+`boss.tscn` wires two `CollisionShape2D` children: `BodyShape`
+(index 0) and `WeakShape` (index 1). The shape order in the
+`shapes` array of the Area2D MUST match this, because the boss's
+`area_shape_entered` callback uses `area_shape_index == 1` to
+detect weak-point hits. If the order is swapped, weak-point hits
+would never trigger the 2x damage.
+
+## boss + wave_manager integration (main.gd)
+
+- `main.gd.ENEMY_SCENES["boss"] = "res://scenes/boss.tscn"`
+- `main.gd._on_boss_fight_started()` (handler for
+  `WaveManager.boss_fight_started`) spawns the boss at (576, -48),
+  stores the ref in `main.boss`, wires `defeated` -> `_on_boss_defeated`
+  and `died` -> `_on_boss_died_score`.
+- `main.gd._on_boss_defeated()` sets `victory = true`, calls
+  `wave_manager.notify_boss_defeated()`.
+- `main.gd._on_boss_died_score(score_value)` calls `add_score(500)`.
+- `wave_manager.notify_boss_defeated()` is a no-op unless
+  `state == BOSS_FIGHT`; otherwise transitions to `State.COMPLETE`.
+- `main.get_game_state()` exposes `victory`, `boss_hp`, `boss_max_hp`
+  (sourced from `main.boss` when valid, 0 otherwise).
