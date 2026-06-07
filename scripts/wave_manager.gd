@@ -79,6 +79,11 @@ const WAVE_CONFIG: Array = [
 var current_wave: int = 0
 ## Public state of the manager. See `State` enum.
 var state: int = State.IDLE
+## Loop-count difficulty from main.gd. Each level adds a small
+## speed / fire-rate bump on top of the per-wave config. Defaults to 0
+## (first run) so existing tests that assert exact 1.10x / 1.20x
+## multipliers continue to pass.
+var difficulty: int = 0
 ## Enemies spawned by the current wave. Entries are removed on
 ## `tree_exited`. When the list is empty AND state == IN_PROGRESS, the
 ## wave is considered cleared.
@@ -251,18 +256,39 @@ func _spread_x(index: int, count: int, viewport_w: float) -> float:
 
 ## Apply the wave's speed / fire-rate multipliers to a freshly-spawned
 ## enemy. Both modifiers are exposed on the enemy base script as
-## `move_speed` and `fire_interval`; we mutate those directly.
+## `move_speed` and `fire_interval`; we mutate those directly. The
+## per-manager `difficulty` (loop counter from main.gd) is folded on
+## top of the per-wave multipliers: each level adds 5% speed and
+## shaves 2% off fire interval (faster cadence).
 func _apply_modifiers(enemy: Node, speed_mult: float, fire_rate_mult: float) -> void:
 	if enemy == null:
 		return
+	# Difficulty folding: 1.0 + 0.05 * difficulty for speed, the
+	# inverse for fire interval. Difficulty == 0 -> multiplier == 1.0
+	# so existing tests that assert exact 1.10x / 1.20x wave configs
+	# still pass.
+	var diff_speed: float = 1.0 + 0.05 * float(difficulty)
+	var diff_fire: float = 1.0
+	if difficulty > 0:
+		diff_fire = 1.0 - 0.02 * float(difficulty)
+	if diff_fire < 0.1:
+		diff_fire = 0.1  # floor so the enemy doesn't shoot every frame
 	if "move_speed" in enemy:
-		enemy.move_speed = float(enemy.move_speed) * speed_mult
+		enemy.move_speed = float(enemy.move_speed) * speed_mult * diff_speed
 	# A lower fire_interval means faster shots; if the wave's
 	# fire_rate_mult is < 1.0 we shorten the interval accordingly.
 	if fire_rate_mult > 0.0 and "fire_interval" in enemy:
 		var base_interval: float = float(enemy.fire_interval)
 		if base_interval > 0.0:
-			enemy.fire_interval = base_interval * fire_rate_mult
+			enemy.fire_interval = base_interval * fire_rate_mult * diff_fire
+
+
+## Public: set the loop-count difficulty. Each level is +5% enemy
+## speed and -2% fire interval. Called by main.gd on session start
+## (after the menu -> playing transition). Safe to call mid-wave; the
+## new value applies to the NEXT wave spawned.
+func set_difficulty(value: int) -> void:
+	difficulty = max(0, int(value))
 
 
 ## Hook a freshly-spawned enemy into our tracking. We rely on
@@ -350,6 +376,7 @@ func get_state() -> Dictionary:
 		"alive_count": get_alive_count(),
 		"is_wave_clear": is_wave_clear(),
 		"banner_remaining": _banner_remaining,
+		"difficulty": difficulty,
 	}
 
 

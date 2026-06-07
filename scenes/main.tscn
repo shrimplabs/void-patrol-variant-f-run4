@@ -1,7 +1,10 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="Texture2D" path="res://assets/backgrounds/starfield.png" id="2_starfield"]
+[ext_resource type="PackedScene" path="res://scenes/menu_overlay.tscn" id="3_menu"]
+[ext_resource type="PackedScene" path="res://scenes/game_over_overlay.tscn" id="4_gameover"]
+[ext_resource type="PackedScene" path="res://scenes/victory_overlay.tscn" id="5_victory"]
 
 [node name="Main" type="Node"]
 script = ExtResource("1_main")
@@ -10,3 +13,11 @@ script = ExtResource("1_main")
 position = Vector2(576, 324)
 texture = ExtResource("2_starfield")
 centered = true
+
+[node name="MenuOverlay" parent="." instance=ExtResource("3_menu")]
+
+[node name="GameOverOverlay" parent="." instance=ExtResource("4_gameover")]
+visible = false
+
+[node name="VictoryOverlay" parent="." instance=ExtResource("5_victory")]
+visible = false

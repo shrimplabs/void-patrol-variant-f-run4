@@ -1,0 +1,89 @@
+[gd_scene load_steps=3 format=3 uid="uid://b1gameover01"]
+
+[ext_resource type="Script" path="res://scripts/game_over_overlay.gd" id="1_gameover"]
+
+[node name="GameOverOverlay" type="CanvasLayer"]
+layer = 21
+script = ExtResource("1_gameover")
+
+[node name="Root" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Dim" type="ColorRect" parent="Root"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.05, 0.0, 0.0, 0.78)
+mouse_filter = 2
+
+[node name="Content" type="VBoxContainer" parent="Root"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -280.0
+offset_top = -160.0
+offset_right = 280.0
+offset_bottom = 160.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 18
+alignment = 1
+
+[node name="Headline" type="Label" parent="Root/Content"]
+layout_mode = 2
+text = "GAME  OVER"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1.0, 0.45, 0.45, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.95)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 56
+
+[node name="Spacer1" type="Control" parent="Root/Content"]
+custom_minimum_size = Vector2(0, 16)
+layout_mode = 2
+
+[node name="Score" type="Label" parent="Root/Content"]
+layout_mode = 2
+text = "SCORE  0"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.85, 0.95, 1.0, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 32
+
+[node name="HighScore" type="Label" parent="Root/Content"]
+layout_mode = 2
+text = "HIGH  SCORE  0"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.85, 0.95, 1.0, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 24
+
+[node name="Spacer2" type="Control" parent="Root/Content"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+
+[node name="Prompt" type="Label" parent="Root/Content"]
+layout_mode = 2
+text = "PRESS  ENTER  TO  RESTART"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1.0, 0.95, 0.7, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.9)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 22
+
+[node name="ActionButton" type="Button" parent="Root/Content"]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Restart"
+modulate = Color(1, 1, 1, 0)

@@ -8,6 +8,11 @@ extends Node
 ## `_on_enemy_died` for scoring, and tracks it in `_enemies` so the StateServer
 ## can report live enemy state. The wave manager (task 0004) builds on this
 ## API to clear waves and free enemies when an area is cleared.
+##
+## Game flow (task 0007): the start menu, game over screen, and victory
+## screen live as overlay children (see main.tscn). The session state
+## machine is in `_game_state`; transitions are driven by menu input
+## (start_pressed), player death, and boss defeat.
 
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
 const HUD_SCENE := preload("res://scenes/hud.tscn")
@@ -18,6 +23,17 @@ const ENEMY_SCENES := {
 	"bomber": "res://scenes/enemy_bomber.tscn",
 	"boss": "res://scenes/boss.tscn",
 }
+## Score bonus awarded when the player completes a wave. Spec:
+## +100 * wave_number on every wave clear.
+const WAVE_CLEAR_BONUS_PER_WAVE := 100
+## Score bonus awarded when the player completes a wave with full
+## shield remaining (no-hit). Spec: +200 flat on a no-hit clear.
+const NO_HIT_BONUS := 200
+## Score bonus awarded on boss kill. Spec: +500 on boss kill. The
+## boss's `score_value` (500) is already added via the normal
+## `_on_enemy_died` path, so this constant is informational only
+## (kept here for documentation / future use).
+const BOSS_KILL_BONUS := 500
 
 var score: int = 0
 var wave: int = 1
@@ -35,9 +51,22 @@ var boss: Node = null
 
 var player: Node = null
 var hud: CanvasLayer = null
-## Procedural wave manager (task 0004). Spawned as a child in _ready and
-## auto-starts on _ready so the game boots directly into wave 1.
+## Procedural wave manager (task 0004). Spawned as a child in _ready
+## but does NOT auto-start (task 0007 owns the boot sequence: the
+## menu -> playing transition calls `wave_manager.start_game()`).
 var wave_manager: Node = null
+## Game-flow overlay children (task 0007). All three are siblings
+## under Main, all are CanvasLayers with their own scripts. They
+## start visible/hidden per their .tscn defaults (menu visible,
+## game-over and victory hidden) and main.gd flips them as the
+## session state machine transitions.
+var menu_overlay: CanvasLayer = null
+var game_over_overlay: CanvasLayer = null
+var victory_overlay: CanvasLayer = null
+## Session-level state machine. Owns the score / high-score / loop
+## difficulty bookkeeping. Decoupled from main.gd so tests can poke
+## it directly.
+var _game_state: GameState = null
 ## Live enemies currently parented under Main. We track by node reference and
 ## prune on `tree_exited` so the StateServer list never includes freed nodes.
 var _enemies: Array = []
@@ -53,18 +82,214 @@ func _ready() -> void:
 	_spawn_player()
 	_spawn_hud()
 	_spawn_wave_manager()
+	_resolve_overlays()
 	_wire_signals()
 	_wire_wave_signals()
-	# Auto-start the wave sequence when Main is the running scene (i.e.
-	# when main.tscn is loaded as the SceneTree's current_scene). The
-	# `current_scene == self` gate prevents GUT tests (which instantiate
-	# Main as a sub-node of the test runner) from auto-spawning wave 1 --
-	# those tests call `wave_manager.start_game()` explicitly so they can
-	# control when the wave begins.
-	var tree := get_tree()
-	if tree != null and tree.current_scene == self:
-		if wave_manager != null and wave_manager.has_method("start_game"):
+	_wire_overlay_signals()
+	# Boot the session in the MENU state. We no longer auto-start the
+	# wave sequence here -- task 0007 introduces a start menu that
+	# drives the menu -> playing transition. GUT tests that want to
+	# drive the wave sequence call `wave_manager.start_game()` (or
+	# `_begin_session()`) directly on their Main instance; that path
+	# is unaffected by this change.
+	_initialize_session_state()
+
+
+## Resolve the menu / game-over / victory overlay children by name.
+## All three are siblings under Main in main.tscn. We tolerate any of
+## them being absent (a stripped-down test fixture might omit the
+## overlays) so a missing node doesn't break the rest of the wiring.
+func _resolve_overlays() -> void:
+	menu_overlay = get_node_or_null("MenuOverlay")
+	game_over_overlay = get_node_or_null("GameOverOverlay")
+	victory_overlay = get_node_or_null("VictoryOverlay")
+
+
+## Build the GameState (loads high score / difficulty from disk) and
+## seed the HUD with the loaded values. The session starts in the
+## MENU state; the player must press Start to transition to PLAYING.
+func _initialize_session_state() -> void:
+	_game_state = GameState.new()
+	# Seed the HUD with the persisted values so a returning player
+	# sees their high score before the menu even shows (this also
+	# catches a case where the overlays' labels would otherwise show
+	# "HIGH  SCORE  0" briefly).
+	if _game_state.high_score > 0 and hud != null and hud.has_method("set_score"):
+		hud.set_score(_game_state.high_score)
+	# Set the session state to MENU and show the menu. We always start
+	# at MENU -- even on the first run -- so the player explicitly
+	# begins each session (no surprises for a player who just wanted
+	# to see the title screen).
+	_game_state.set_state(GameState.SessionState.MENU)
+	_show_menu_overlay()
+
+
+## Wire the three overlay signals back to the corresponding
+## transitions. Mirrors `_wire_wave_signals` in shape.
+func _wire_overlay_signals() -> void:
+	if menu_overlay != null and menu_overlay.has_signal("start_pressed"):
+		menu_overlay.start_pressed.connect(_on_menu_start_pressed)
+	if game_over_overlay != null and game_over_overlay.has_signal("restart_pressed"):
+		game_over_overlay.restart_pressed.connect(_on_game_over_restart_pressed)
+	if victory_overlay != null and victory_overlay.has_signal("continue_pressed"):
+		victory_overlay.continue_pressed.connect(_on_victory_continue_pressed)
+
+
+# ---------------------------------------------------------------------
+# Game-flow overlay helpers (task 0007)
+# ---------------------------------------------------------------------
+
+## Show the start menu and hide the two end-of-run overlays. Called
+## on boot and when the player returns to the menu from the victory
+## screen.
+func _show_menu_overlay() -> void:
+	if menu_overlay != null and menu_overlay.has_method("show_menu"):
+		# Push the persisted high score / difficulty into the labels so
+		# the menu's first frame already shows the right values (vs.
+		# flashing "0" before _game_state catches up).
+		if menu_overlay.has_method("set_high_score") and _game_state != null:
+			menu_overlay.set_high_score(_game_state.high_score)
+		if menu_overlay.has_method("set_difficulty") and _game_state != null:
+			menu_overlay.set_difficulty(_game_state.difficulty)
+		menu_overlay.show_menu()
+	if game_over_overlay != null and game_over_overlay.has_method("hide_overlay"):
+		game_over_overlay.hide_overlay()
+	if victory_overlay != null and victory_overlay.has_method("hide_overlay"):
+		victory_overlay.hide_overlay()
+
+
+## Hide the menu and begin a fresh session (reset score, clear
+## enemies, start wave 1). Idempotent in the sense that calling it
+## twice in a row leaves the game in the same state, but the second
+## call is wasteful (an extra wave_manager reset). Callers should
+## gate on `state == MENU` or `state == GAME_OVER` to avoid that.
+func _hide_menu_overlay() -> void:
+	if menu_overlay != null and menu_overlay.has_method("hide_menu"):
+		menu_overlay.hide_menu()
+
+
+## Show the game-over screen with the just-finished run's score and
+## the high score (highlighting "NEW  HIGH  SCORE!" if the run set a
+## new record).
+func _show_game_over_overlay() -> void:
+	if game_over_overlay == null:
+		return
+	if game_over_overlay.has_method("set_summary") and _game_state != null:
+		# "New high score" is true if the just-finished run's final
+		# score beat the previous high score (i.e. the in-memory high
+		# is exactly the session score, and the session score > 0).
+		var is_new_high: bool = (
+			_game_state.current_score > 0
+			and _game_state.current_score == _game_state.high_score
+		)
+		game_over_overlay.set_summary(
+			_game_state.current_score,
+			_game_state.high_score,
+			is_new_high,
+		)
+	if game_over_overlay.has_method("show_overlay"):
+		game_over_overlay.show_overlay()
+
+
+## Show the victory screen with the just-finished run's score and
+## the new high score (with the celebratory line if the run set a
+## new record).
+func _show_victory_overlay() -> void:
+	if victory_overlay == null:
+		return
+	if victory_overlay.has_method("set_summary") and _game_state != null:
+		var is_new_high: bool = (
+			_game_state.current_score > 0
+			and _game_state.current_score == _game_state.high_score
+		)
+		victory_overlay.set_summary(
+			_game_state.current_score,
+			_game_state.high_score,
+			is_new_high,
+		)
+	if victory_overlay.has_method("show_overlay"):
+		victory_overlay.show_overlay()
+
+
+## Menu -> Playing transition. Resets the session, hides the menu,
+## starts the wave manager. Public so tests can drive a fresh
+## session without faking a keypress.
+func begin_session() -> void:
+	if _game_state == null:
+		_initialize_session_state()
+	# Reset the session counters (score, wave, game-over / victory
+	# flags). The high score and difficulty persist across sessions.
+	_game_state.reset_score()
+	score = 0
+	wave = 1
+	game_over = false
+	victory = false
+	boss = null
+	# Push the current difficulty into the wave manager so the next
+	# wave's enemies are scaled accordingly. We do this BEFORE
+	# start_game() so the wave 1 spawn already uses the difficulty
+	# multiplier.
+	if wave_manager != null:
+		if wave_manager.has_method("set_difficulty"):
+			wave_manager.set_difficulty(_game_state.difficulty)
+		if wave_manager.has_method("start_game"):
 			wave_manager.start_game()
+	# Apply the boss-difficulty bump on top of the wave_manager's
+	# per-enemy scaling. We don't touch the boss scene here because
+	# the boss is spawned lazily on `boss_fight_started`; we record
+	# the desired HP multiplier on `_boss_difficulty_hp_mult` and
+	# apply it at spawn time. Each difficulty level adds +1 boss HP
+	# (4%) to keep the boss loop challenging without being unfair.
+	_boss_difficulty_hp_mult = 1.0 + 0.04 * float(_game_state.difficulty)
+	_game_state.set_state(GameState.SessionState.PLAYING)
+	_hide_menu_overlay()
+	# Hide the end-of-run overlays so a player who just lost and
+	# restarted sees a clean screen (defensive -- _show_*_overlay
+	# also hides the others, but this is explicit).
+	if game_over_overlay != null and game_over_overlay.has_method("hide_overlay"):
+		game_over_overlay.hide_overlay()
+	if victory_overlay != null and victory_overlay.has_method("hide_overlay"):
+		victory_overlay.hide_overlay()
+	# Reset the player so lives/shield are full and they're at the
+	# bottom-center of the viewport. (The player scene's _ready does
+	# this on a fresh instance, but the same player node lives
+	# across sessions, so we need to call respawn() explicitly.)
+	if player != null and player.has_method("respawn"):
+		player.respawn()
+
+
+## HP multiplier applied to a freshly-spawned boss. Computed in
+## `begin_session()` from the current loop difficulty. Defaults to
+## 1.0 (no change) so existing tests that assert `boss.max_hp == 40`
+## continue to pass.
+var _boss_difficulty_hp_mult: float = 1.0
+
+
+## Menu -> Playing handler. Called when the player presses Enter on
+## the start menu.
+func _on_menu_start_pressed() -> void:
+	begin_session()
+
+
+## Game Over -> Playing handler. Called when the player presses
+## Enter on the game-over screen. Same effect as begin_session()
+## but the explicit name makes the signal-routing readable.
+func _on_game_over_restart_pressed() -> void:
+	begin_session()
+
+
+## Victory -> Menu handler. Called when the player presses Enter on
+## the victory screen. Increments the loop difficulty (since they
+## completed a full run), then transitions back to MENU so the next
+## Start begins a more difficult run.
+func _on_victory_continue_pressed() -> void:
+	# Increment difficulty on the loop transition. The increment
+	# happens BEFORE we show the menu so the menu's "DIFFICULTY  N+1"
+	# line is accurate on the very next frame.
+	if _game_state != null:
+		_game_state.increment_difficulty()
+	_game_state.set_state(GameState.SessionState.MENU)
+	_show_menu_overlay()
 
 
 func _spawn_player() -> void:
@@ -130,6 +355,12 @@ func _on_wave_started(wave_number: int) -> void:
 	# Update the global wave counter (so the HUD WaveLabel reflects the
 	# current wave even if the wave manager state lags by a frame).
 	set_wave(wave_number)
+	# Reset the no-hit flag for the new wave. We use GameState's
+	# `begin_wave` to also capture the wave number, so the no-hit
+	# bonus can reference which wave just completed (useful for QA
+	# / replay logs).
+	if _game_state != null:
+		_game_state.begin_wave(wave_number)
 
 
 func _on_wave_cleared(_wave_number: int) -> void:
@@ -224,6 +455,14 @@ func _on_player_shield_changed(current: float, max_value: float) -> void:
 	# Only flash when shield drops -- regen shouldn't trigger the damage overlay.
 	if current < _last_shield and hud.has_method("flash_damage"):
 		hud.flash_damage(_last_shield - current)
+		# A drop in shield also disqualifies the current wave from the
+		# no-hit bonus. We mark here rather than in the player because
+		# that's the single source of truth for "the player took
+		# damage" (the player itself doesn't know about wave context).
+		# Note: a life-loss / respawn also calls shield_changed with
+		# current=0 then current=max, so this also catches that path.
+		if _game_state != null:
+			_game_state.mark_wave_hit()
 	_last_shield = current
 
 
@@ -236,6 +475,27 @@ func _on_player_died() -> void:
 	game_over = true
 	if score > high_score:
 		high_score = score
+	# Persist the high score immediately so a player who force-quits
+	# right after dying still gets credit for the run. We save AFTER
+	# the in-memory update so the write reflects the final score.
+	if _game_state != null:
+		_game_state.save_high_score_if_higher()
+	# Transition the session state and show the game-over overlay.
+	# We don't stop the wave manager here -- it will keep ticking
+	# the cleared-delay timer, but the wave sequence effectively
+	# freezes (no input reaches the player; no new enemies spawn
+	# from the player's perspective). The wave_manager is reset on
+	# the next begin_session().
+	if _game_state != null:
+		_game_state.set_state(GameState.SessionState.GAME_OVER)
+	_show_game_over_overlay()
+	# QA checkpoint for the test harness. Guard the absolute-path
+	# lookup so a late signal during GUT teardown doesn't ERROR.
+	if not is_inside_tree():
+		return
+	var harness := get_node_or_null("/root/TestHarness")
+	if harness != null and harness.has_method("checkpoint"):
+		harness.checkpoint({"event": "player_died", "score": score, "high_score": high_score})
 
 
 ## Add score (e.g. when an enemy is killed). Clamps the new high score.
