@@ -55,9 +55,15 @@ func _wire_signals() -> void:
 		player.died.connect(_on_player_died)
 
 
+var _last_shield: float = 0.0
+
 func _on_player_shield_changed(current: float, max_value: float) -> void:
 	if hud and hud.has_method("set_shield"):
 		hud.set_shield(current, max_value)
+	# Only flash when shield drops -- regen shouldn't trigger the damage overlay.
+	if current < _last_shield and hud.has_method("flash_damage"):
+		hud.flash_damage(_last_shield - current)
+	_last_shield = current
 
 
 func _on_player_lives_changed(current: int, _max_value: int) -> void:
