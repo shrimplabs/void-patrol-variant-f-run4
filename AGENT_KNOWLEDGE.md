@@ -248,3 +248,32 @@ would never trigger the 2x damage.
 **Session loop:** menu -> playing (via Start) -> ... -> game_over (player_died) / victory (boss_defeated) ->
 menu (via Restart on game-over, or Continue on victory). Continue increments difficulty for the next run;
 Restart keeps difficulty the same.
+
+---
+## Overlay fade-in/out pattern (void-patrol-variant-f-run4)
+
+For game over / victory / menu overlays, structure as:
+```
+CanvasLayer (root, with show_X() / hide_X() public methods)
+└── Root (Control, PRESET_FULL_RECT)
+    ├── Dim (ColorRect, full rect)
+    └── Content (VBoxContainer with the actual labels)
+```
+
+To fade in/out, tween the Root's `modulate.a` rather than each child:
+- `show_X()`: `visible = true; root.modulate.a = 0.0; tween to 1.0 over FADE_IN`
+- `hide_X()`: tween to 0.0 over FADE_OUT, then set `visible = false` via tween_callback
+
+Key rules:
+- Track the active tween in a member var (`_root_tween: Tween = null`) and `kill()` it before starting a new one so a quick show/hide toggle doesn't double-animate
+- `modulate` multiplies through the child tree, so the prompt's sin-pulse on its own modulate still works during the fade-in (it just gets dimmer briefly)
+- The fade-in is intentionally short (0.2-0.35s) so it doesn't delay gameplay
+- The fade-out is shorter than the fade-in so the next screen pops up snappily
+- Don't tween when the overlay is already at the target alpha (avoid restarting finished tweens)
+- For an intro fade-in on _ready, set `modulate.a = 0.0` and start a tween in `_ready()`
+
+Recurring gotcha: `Tween.is_valid()` returns true while the tween is active. Use it before `kill()` to avoid no-op kills. But you can also just always call `kill()` — it's safe to kill a finished tween.
+
+In tests:
+- Tests that instantiate overlay scenes directly and call `set_summary`/`set_high_score` don't trigger the fade code (they don't call show/hide), so the fade is test-safe
+- Tests that call `_unhandled_input` on the overlay work because the CanvasLayer's `visible` is true by default — modulate.a doesn't affect input handling
