@@ -164,3 +164,87 @@ would never trigger the 2x damage.
   `state == BOSS_FIGHT`; otherwise transitions to `State.COMPLETE`.
 - `main.get_game_state()` exposes `victory`, `boss_hp`, `boss_max_hp`
   (sourced from `main.boss` when valid, 0 otherwise).
+
+---
+## Task 0007 (Game flow, scoring, high score) — DONE & validated
+
+**Status:** Implementation complete across commits bb6f6ca, c6c1fa1, 7712346, be54b98. 33/33 test_game_flow.gd tests pass, full GUT 224/225 (1 risky placeholder).
+
+**Key files & contracts:**
+
+### scripts/high_score.gd (class_name HighScore, RefCounted, static API)
+- `SAVE_PATH = "user://highscore.cfg"`, single ConfigFile section
+- `load_high_score() -> int` (returns 0 on missing/corrupt)
+- `save_high_score(score) -> int` (preserves difficulty)
+- `save_if_higher(score) -> bool` (returns true if written)
+- `load_difficulty() -> int` / `save_difficulty(d) -> int`
+- `reset_save() -> int` (test-only; removes user://highscore.cfg)
+
+### scripts/game_state.gd (class_name GameState, RefCounted)
+- `SessionState` enum: MENU, PLAYING, GAME_OVER, VICTORY
+- Signals: state_changed, score_changed, difficulty_changed, no_hit_changed
+- `state`, `current_score`, `high_score`, `difficulty`, `wave_no_hit`, `no_hit_wave_number`
+- `set_state(s)`, `add_score(d)`, `reset_score()`
+- `save_high_score_if_higher()`, `increment_difficulty()` (persists), `reload_persisted()`
+- `begin_wave(n)` / `mark_wave_hit()` (no-hit tracking)
+- `get_state() -> Dictionary` for StateServer
+- Loads high_score + difficulty in `_init` from HighScore
+
+### scripts/main.gd game-flow additions
+- `menu_overlay`, `game_over_overlay`, `victory_overlay` (CanvasLayer refs)
+- `victory: bool`, `boss: Node` (live boss ref for state), `_game_state: GameState`
+- `_boss_difficulty_hp_mult: float = 1.0` (1.0 + 0.04 * difficulty, applied to boss max_hp at spawn)
+- Constants: `WAVE_CLEAR_BONUS_PER_WAVE = 100`, `NO_HIT_BONUS = 200`, `BOSS_KILL_BONUS = 500`
+- `begin_session()` (public, idempotent): resets score/wave/flags, sets wave_manager difficulty, starts waves
+- `_show_*_overlay()` helpers push (final_score, high_score, is_new_high) into overlays
+- `_on_wave_cleared(n)`: awards 100*n + optional 200 (no-hit); is_inside_tree()-guarded TestHarness checkpoint
+- `_on_boss_defeated()`: sets victory, save_high_score_if_higher, sets state to VICTORY, shows overlay
+- `_on_victory_continue_pressed()`: increment_difficulty(), back to MENU, shows menu
+- `_on_player_died()`: save_high_score_if_higher, GAME_OVER state, shows overlay
+- `_on_player_shield_changed`: flash_damage + mark_wave_hit on drops (only when current < _last_shield)
+- `get_game_state()` exposes: scene, score, wave, high_score, bombs, game_over, victory,
+  player, hud, enemies, enemy_count, enemy_counts_by_type, wave_manager, boss_hp, boss_max_hp,
+  game_flow (state, state_name, current_score, high_score, difficulty, wave_no_hit, no_hit_wave_number)
+
+### scripts/menu_overlay.gd (class_name MenuOverlay, CanvasLayer)
+- Signals: start_pressed, exit_pressed
+- Tree: Root (Control, PRESET_FULL_RECT) > Content (VBoxContainer with Title, HighScore, Difficulty, Prompt, StartButton)
+- show_menu() / hide_menu() / set_high_score(v) / set_difficulty(v)
+- ui_accept/ui_select triggers start_pressed; ui_cancel triggers exit_pressed
+- _process blinks prompt alpha 0.3..1.0 every 1.2s
+- HighScore label hidden when value == 0; same for Difficulty
+
+### scripts/endgame_overlay.gd (class_name EndgameOverlay, CanvasLayer)
+- Base for game-over / victory screens. Signals: restart_pressed, continue_pressed.
+- Subclasses override _emit_action() to pick the right signal.
+- set_summary(final_score, high_score, is_new_high) — gold-tints high score on new high
+- Headline / Prompt / Score / HighScore labels, blinks prompt alpha.
+
+### scripts/game_over_overlay.gd (extends EndgameOverlay, class_name GameOverOverlay)
+- Headline: "GAME  OVER", prompt: "PRESS  ENTER  TO  RESTART"
+- _emit_action() emits restart_pressed
+
+### scripts/victory_overlay.gd (extends EndgameOverlay, class_name VictoryOverlay)
+- Headline: "VICTORY", prompt: "PRESS  ENTER  TO  CONTINUE"
+- _emit_action() emits continue_pressed
+
+### scenes/main.tscn
+- Root Main (Node, scripts/main.gd) > Background (Sprite2D, starfield) +
+  MenuOverlay (default visible) + GameOverOverlay (visible=false) + VictoryOverlay (visible=false)
+  (Player, HUD, WaveManager, BulletsPool, etc. added at runtime via _ready)
+
+### tests: test/unit/test_game_flow.gd (33 tests, all passing)
+- HighScore: load zero when no save, save-then-load round-trip, save_if_higher no-clobber,
+  save preserves difficulty, difficulty load returns zero unset
+- GameState: starts in menu with zero, set_state emits + idempotent, add_score clamps + updates
+  high_score, no-hit flag resets on begin_wave, mark_wave_hit idempotent, increment_difficulty persists
+- Main: starts in menu, begin_session transitions to playing, begin_session resets score on second
+  call, get_game_state includes game_flow keys, wave-cleared awards 100*wave, no-hit bonus,
+  no-hit bonus withheld on damage, player_died saves high score, lower run doesn't overwrite
+- Difficulty: starts at 0, victory continue increments, persists across main instances
+- Overlays: menu shows high score / hides on zero / emits start_pressed, game-over shows summary,
+  celebrates new high, victory shows continue prompt, emits continue_pressed, game-over emits restart_pressed
+
+**Session loop:** menu -> playing (via Start) -> ... -> game_over (player_died) / victory (boss_defeated) ->
+menu (via Restart on game-over, or Continue on victory). Continue increments difficulty for the next run;
+Restart keeps difficulty the same.
