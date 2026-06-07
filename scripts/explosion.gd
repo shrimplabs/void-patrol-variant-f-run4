@@ -62,7 +62,6 @@ func _ready() -> void:
 	_particles.name = "Particles"
 	_particles.emitting = false
 	_particles.one_shot = true
-	_particles.flag_align_y = false
 	# Auto-free on the `finished` signal so a normal play session
 	# doesn't leave explosions lingering in the tree.
 	_particles.finished.connect(_on_particles_finished)
@@ -90,7 +89,8 @@ func setup(size_value: int) -> void:
 func set_explosion_scale(value: float) -> void:
 	_scale_factor = max(0.1, value)
 	if _particles != null:
-		_particles.scale_amount = _scale_factor
+		_particles.scale_amount_min = _scale_factor
+		_particles.scale_amount_max = _scale_factor
 
 
 ## Public: number of particles this explosion will spawn. Returns 0
@@ -134,7 +134,8 @@ func _apply_size(size_value: int) -> void:
 		_particles.initial_velocity_min = LARGE_INITIAL_VELOCITY_MIN
 		_particles.initial_velocity_max = LARGE_INITIAL_VELOCITY_MAX
 		_particles.color = LARGE_COLOR
-		_particles.scale_amount = _scale_factor * 1.0
+		_particles.scale_amount_min = _scale_factor * 1.0
+		_particles.scale_amount_max = _scale_factor * 1.0
 		_particles.explosiveness = 0.95
 	else:
 		_particles.amount = SMALL_PARTICLE_COUNT
@@ -142,7 +143,8 @@ func _apply_size(size_value: int) -> void:
 		_particles.initial_velocity_min = SMALL_INITIAL_VELOCITY_MIN
 		_particles.initial_velocity_max = SMALL_INITIAL_VELOCITY_MAX
 		_particles.color = SMALL_COLOR
-		_particles.scale_amount = _scale_factor * 0.6
+		_particles.scale_amount_min = _scale_factor * 0.6
+		_particles.scale_amount_max = _scale_factor * 0.6
 		_particles.explosiveness = 0.85
 
 

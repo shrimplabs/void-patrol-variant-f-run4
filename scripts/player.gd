@@ -186,6 +186,12 @@ func _fire_bullet_at(world_pos: Vector2) -> void:
 	var b := _spawn_bullet(world_pos)
 	if b != null:
 		fired.emit(b)
+		# SFX: short upward blip for the player shot. The pool spawns
+		# many bullets per second, so a single play() per fire call is
+		# right (the AudioManager pool handles rapid-fire gracefully).
+		var am := get_node_or_null("/root/AudioManager")
+		if am != null and am.has_method("play"):
+			am.call("play", "shoot")
 
 
 ## Spawn one bullet traveling in an arbitrary direction (used for
@@ -227,6 +233,13 @@ func take_damage(amount: float) -> float:
 		return shield
 	shield = max(0.0, shield - amount)
 	shield_changed.emit(shield, max_shield)
+	# SFX: shield-hit blip + descending life-lost tone if a life was
+	# consumed. The HUD also flashes on shield drop (see
+	# `_on_player_shield_changed` in main.gd).
+	if amount > 0.0:
+		var am := get_node_or_null("/root/AudioManager")
+		if am != null and am.has_method("play"):
+			am.call("play", "shield_hit")
 	if shield <= 0.0:
 		_lose_life()
 	return shield

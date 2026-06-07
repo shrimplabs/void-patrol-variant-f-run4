@@ -144,6 +144,12 @@ func _on_body_entered(body: Node) -> void:
 	if not body.is_in_group("player"):
 		return
 	_collected = true
+	# SFX: pickup chime. Fires only on player pickup (not screen-exit).
+	# We resolve the AudioManager via the safe absolute-path lookup so
+	# this script works in headless / no-autoload contexts.
+	var am := get_node_or_null("/root/AudioManager")
+	if am != null and am.has_method("play"):
+		am.call("play", "pickup")
 	_apply_effect(body)
 	collected.emit(self)
 	# queue_free is unsafe here because body_entered is a physics callback:

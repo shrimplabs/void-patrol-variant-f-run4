@@ -17,6 +17,7 @@ extends Node
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
 const HUD_SCENE := preload("res://scenes/hud.tscn")
 const POWERUP_SCENE := preload("res://scenes/powerup.tscn")
+const EXPLOSION_SCENE := preload("res://scenes/explosion.tscn")
 const ENEMY_SCENES := {
 	"drone": "res://scenes/enemy_drone.tscn",
 	"fighter": "res://scenes/enemy_fighter.tscn",
@@ -380,6 +381,9 @@ func _on_wave_cleared(wave_number: int) -> void:
 		bonus += NO_HIT_BONUS
 	if bonus > 0:
 		add_score(bonus)
+	# SFX: wave-clear arpeggio. Plays on every clear, regardless of
+	# whether the bonus was a no-hit clear.
+	_play_sfx("wave_clear")
 	# QA checkpoint for the test harness. Guard the absolute-path
 	# lookup so a late signal during GUT teardown doesn't ERROR.
 	if not is_inside_tree():
@@ -408,6 +412,10 @@ func _on_boss_fight_started() -> void:
 	# Update the global wave counter to 7 (per design doc). The boss
 	# itself is task 0005's responsibility; this only updates state.
 	set_wave(wave_manager.current_wave if wave_manager else 7)
+	# SFX: switch to the boss intensity loop. This replaces any
+	# in-flight loop (in our case, none -- we only loop on boss
+	# music). The loop is stopped on boss defeat.
+	_play_loop("boss_intensity")
 	# Spawn the boss at the top-center of the arena. The boss script
 	# (scripts/boss.gd) handles the entry animation: it starts above
 	# the viewport, drifts down to BATTLE_Y, then sweeps horizontally.
@@ -449,6 +457,11 @@ func _on_boss_defeated() -> void:
 	victory = true
 	if wave_manager != null and wave_manager.has_method("notify_boss_defeated"):
 		wave_manager.notify_boss_defeated()
+	# SFX: stop the boss music loop, play the big-explosion thud
+	# (the boss was just destroyed), then a victory sting.
+	_stop_loop()
+	_play_sfx("explosion_large")
+	_play_sfx("victory")
 	# Persist the high score. We save AFTER the boss's died signal
 	# adds its 500 points (via `_on_boss_died_score` -- the boss's
 	# `died` signal is connected both there AND in `_track_enemy` for
@@ -518,6 +531,11 @@ func _on_player_died() -> void:
 	game_over = true
 	if score > high_score:
 		high_score = score
+	# SFX: game-over sting. Also stop any in-flight loop (boss music
+	# would otherwise keep playing through the game-over screen).
+	_stop_loop()
+	_play_sfx("life_lost")
+	_play_sfx("game_over")
 	# Persist the high score immediately so a player who force-quits
 	# right after dying still gets credit for the run. We save AFTER
 	# the in-memory update so the write reflects the final score.
@@ -643,6 +661,19 @@ func _on_enemy_died(score_value: int) -> void:
 	# is freed in EnemyBase._die() and pruned from _enemies by
 	# _on_enemy_exited when the tree_exited signal fires.
 	add_score(int(score_value))
+	# SFX + visual feedback. Pick the variant by enemy type:
+	#   drone     -> small explosion + small SFX
+	#   fighter   -> large explosion + large SFX
+	#   bomber    -> large explosion + large SFX
+	#   boss      -> large explosion + large SFX (extra victory sting
+	#                is fired separately from `_on_boss_defeated`)
+	var pos: Vector2 = _last_died_enemy_position
+	if _last_died_enemy_type == "drone":
+		spawn_small_explosion(pos)
+		_play_sfx("explosion_small")
+	elif _last_died_enemy_type in ["fighter", "bomber", "boss"]:
+		spawn_large_explosion(pos)
+		_play_sfx("explosion_large")
 	# The enemy that just died passed its `enemy_type_name` before freeing.
 	# We can't read it from the dead signal (it carries only the score), so
 	# we have to look at the most-recently-killed enemy. We do that by
@@ -718,6 +749,46 @@ func spawn_powerup(kind: int, world_position: Vector2) -> Node:
 		p.setup(kind)
 	add_child(p)
 	return p
+
+
+# ---------------------------------------------------------------------
+# Explosion spawning (task 0008 polish)
+# ---------------------------------------------------------------------
+
+## Spawn a particle explosion at `world_position` with the given size
+## (Explosion.SIZE_SMALL for drones, Explosion.SIZE_LARGE for bombers
+## / boss). Returns the spawned node (or null on failure). Public so
+## tests can construct explosions on demand and assert on their
+## particle config. The explosion is parented to Main, runs for its
+## configured lifetime, and queue_frees itself.
+func spawn_explosion(world_position: Vector2, size: int = 0) -> Node:
+	if EXPLOSION_SCENE == null:
+		push_warning("Main.spawn_explosion: explosion scene failed to load")
+		return null
+	var e: Node = EXPLOSION_SCENE.instantiate()
+	if e == null:
+		return null
+	if e is Node2D:
+		(e as Node2D).global_position = world_position
+	# Configure size BEFORE add_child so the .tscn's _ready() sees it
+	# and applies the particle config in one pass.
+	if e.has_method("setup"):
+		e.setup(int(size))
+	add_child(e)
+	return e
+
+
+## Convenience: spawn a small explosion. Used by enemy_base._die()
+## when a drone is killed (cheap, low particle count). The big
+## explosion variant is reserved for bombers / boss / victory.
+func spawn_small_explosion(world_position: Vector2) -> Node:
+	return spawn_explosion(world_position, 0)
+
+
+## Convenience: spawn a large explosion. Used by enemy_base._die()
+## when a bomber / boss is killed.
+func spawn_large_explosion(world_position: Vector2) -> Node:
+	return spawn_explosion(world_position, 1)
 
 
 ## Apply a power-up of the given kind. Called by Powerup._on_body_entered
@@ -844,4 +915,76 @@ func get_game_state() -> Dictionary:
 		"boss_hp": boss_hp_value,
 		"boss_max_hp": boss_max_hp_value,
 		"game_flow": game_flow_state,
+		"audio": get_audio_state(),
 	}
+
+
+# ---------------------------------------------------------------------
+# Audio plumbing (task 0008 polish)
+# ---------------------------------------------------------------------
+
+## Resolve the AudioManager autoload via the safe absolute-path lookup.
+## Returns null if the autoload isn't registered (e.g. --script mode
+## doesn't load autoloads) or in headless mode. We never reference
+## the bare `AudioManager` name because that breaks script parse
+## checks (mirrors the BulletPool pattern).
+func _audio() -> Node:
+	return get_node_or_null("/root/AudioManager")
+
+
+## Play a one-shot SFX. No-op if the AudioManager isn't loaded or
+## the SFX name is unknown. Public-ish (used by main.gd handlers
+## only) so future game-state code can fire SFX without each call
+## site knowing about the autoload table. Also no-ops if main has
+## been detached from the tree (e.g. during GUT teardown via
+## free_all) -- absolute-path get_node() would otherwise throw.
+func _play_sfx(sfx_name: String, volume_db: float = 0.0) -> void:
+	if not is_inside_tree():
+		return
+	var am := _audio()
+	if am == null:
+		return
+	if am.has_method("play"):
+		am.call("play", sfx_name, volume_db)
+
+
+## Start a looping SFX (used for boss music). Replaces any in-flight
+## loop. No-op if the AudioManager isn't loaded or the SFX is unknown.
+## Same teardown guard as _play_sfx.
+func _play_loop(sfx_name: String, volume_db: float = -6.0) -> void:
+	if not is_inside_tree():
+		return
+	var am := _audio()
+	if am == null:
+		return
+	if am.has_method("play_loop"):
+		am.call("play_loop", sfx_name, volume_db)
+
+
+## Stop the current looping SFX (used on game-over / boss defeat).
+## Same teardown guard as _play_sfx.
+func _stop_loop() -> void:
+	if not is_inside_tree():
+		return
+	var am := _audio()
+	if am == null:
+		return
+	if am.has_method("stop_loop"):
+		am.call("stop_loop")
+
+
+## Public read-only state for QA / tests. Mirrors the AudioManager's
+## is_playing + get_playing_count so the StateServer can poll the
+## "is music currently playing" flag without poking the autoload
+## directly.
+func get_audio_state() -> Dictionary:
+	var am := _audio()
+	if am == null:
+		return {"available": false, "boss_music": false, "oneshots_playing": 0}
+	var boss_music: bool = false
+	if am.has_method("is_playing"):
+		boss_music = bool(am.call("is_playing", "boss_intensity"))
+	var count: int = 0
+	if am.has_method("get_playing_count"):
+		count = int(am.call("get_playing_count"))
+	return {"available": true, "boss_music": boss_music, "oneshots_playing": count}

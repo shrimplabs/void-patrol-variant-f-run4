@@ -5,7 +5,7 @@ class_name HUD
 ## All fields are "placeholders" in the sense that the values are wired in,
 ## but the displayed text is plain for now (no fancy formatting / icons yet).
 
-const LOW_SHIELD_THRESHOLD := 0.30
+const LOW_SHIELD_THRESHOLD := 0.25
 const LOW_SHIELD_PULSE_HZ := 4.0
 
 @onready var _score_label: Label = $Root/ScoreLabel
