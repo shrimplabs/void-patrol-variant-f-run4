@@ -112,7 +112,9 @@ func scroll(delta: float) -> void:
 ## setting `process_mode = PROCESS_MODE_MANUAL` and calling `scroll(dt)`
 ## themselves.
 func _process(delta: float) -> void:
-	if process_mode == Node.PROCESS_MODE_MANUAL:
+	# `Node.PROCESS_MODE_DISABLED` (= 4) and skip auto-scroll, letting
+	# tests drive the parallax by calling `scroll(dt)` themselves.
+	if process_mode == Node.PROCESS_MODE_DISABLED:
 		return
 	scroll(delta)
 

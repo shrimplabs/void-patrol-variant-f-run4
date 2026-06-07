@@ -55,9 +55,23 @@ var _pool: Array = []
 var _loop_player: AudioStreamPlayer = null
 ## Tracks how many one-shots are currently playing (for tests).
 var _active_oneshots: int = 0
+## When true, all play() / play_loop() calls are no-ops. Tests flip
+## this via set_muted() to suppress audio on the CI box.
+var muted: bool = false
+## When true, the AudioManager refuses to build its player pool and
+## ignores all play() calls. Set automatically in --headless mode
+## (where there's no audio device) so a bare launch_game() doesn't
+## crash on missing audio.
+var _audio_disabled: bool = false
 
 
 func _ready() -> void:
+	# In --headless mode (CI / GUT) there's no audio device, so don't
+	# even build the player pool -- the AudioStreamPlayer nodes would
+	# be useless and would just leak at exit.
+	if OS.has_feature("headless") or DisplayServer.get_name() == "headless":
+		_audio_disabled = true
+		return
 	for i in range(SFX_POOL_SIZE):
 		var p := AudioStreamPlayer.new()
 		p.name = "SfxPlayer_%d" % i
@@ -67,9 +81,24 @@ func _ready() -> void:
 		_pool.append(p)
 
 
+## Public: toggle global mute. When muted, play() returns immediately
+## without scheduling a sound. Tests use this to suppress SFX during
+## fixture setup so the CI box doesn't actually emit audio.
+func set_muted(value: bool) -> void:
+	muted = bool(value)
+	if muted:
+		stop_loop()
+
+
 ## Public: play a one-shot SFX. Picks the first idle player in the
 ## pool. If all players are busy the oldest active one is preempted.
+## In --headless / disabled mode this is a no-op (no crash, no
+## counter change).
 func play(sfx_name: String, volume_db: float = 0.0) -> void:
+	if _audio_disabled or muted:
+		return
+	if _pool.is_empty():
+		return
 	var stream := _get_or_build_sfx(sfx_name)
 	if stream == null:
 		return
@@ -94,8 +123,10 @@ func play(sfx_name: String, volume_db: float = 0.0) -> void:
 ## Public: start a looping SFX (used for `boss_intensity`). Returns the
 ## looping AudioStreamPlayer, or null if the SFX is unknown. The loop
 ## is exclusive -- a second call to play_loop without a stop_loop
-## replaces the previous loop.
+## replaces the previous loop. No-op in disabled / muted mode.
 func play_loop(sfx_name: String, volume_db: float = -6.0) -> AudioStreamPlayer:
+	if _audio_disabled or muted:
+		return null
 	if _loop_player != null:
 		stop_loop()
 	var stream := _get_or_build_sfx(sfx_name)
@@ -139,6 +170,12 @@ func is_playing(sfx_name: String) -> bool:
 ## doesn't count toward this number.
 func get_playing_count() -> int:
 	return _active_oneshots
+
+
+## Public: total SFX names registered. Tests use this to assert the
+## catalog shape is stable.
+func get_sfx_count() -> int:
+	return SFX_NAMES.size()
 
 
 ## Public: pre-build every SFX in the bank. Tests call this from
