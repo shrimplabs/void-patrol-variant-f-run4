@@ -138,6 +138,12 @@ func _initialize_session_state() -> void:
 func _wire_overlay_signals() -> void:
 	if menu_overlay != null and menu_overlay.has_signal("start_pressed"):
 		menu_overlay.start_pressed.connect(_on_menu_start_pressed)
+	if menu_overlay != null and menu_overlay.has_signal("exit_pressed"):
+		# Escape on the title screen quits the game. The signal is
+		# only emitted while the menu is visible (see menu_overlay.gd
+		# `_unhandled_input`), so we never accidentally quit during
+		# gameplay.
+		menu_overlay.exit_pressed.connect(_on_menu_exit_pressed)
 	if game_over_overlay != null and game_over_overlay.has_signal("restart_pressed"):
 		game_over_overlay.restart_pressed.connect(_on_game_over_restart_pressed)
 	if victory_overlay != null and victory_overlay.has_signal("continue_pressed"):
@@ -278,6 +284,14 @@ var _boss_difficulty_hp_mult: float = 1.0
 ## the start menu.
 func _on_menu_start_pressed() -> void:
 	begin_session()
+
+
+## Menu -> Quit handler. Called when the player presses Escape on
+## the start menu. The menu overlay only emits `exit_pressed` while
+## it is visible, so this is safe to call any time the title screen
+## is up (boot, post-game-over, post-victory, etc.).
+func _on_menu_exit_pressed() -> void:
+	get_tree().quit()
 
 
 ## Game Over -> Playing handler. Called when the player presses
