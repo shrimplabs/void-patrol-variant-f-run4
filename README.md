@@ -25,8 +25,16 @@ godot --path .
 
 ## Test
 
+Script parsing does not require third-party addons:
+
 ```sh
 godot --headless --path . --script check_scripts.gd --quit
+```
+
+The unit tests use GUT. Install GUT locally at `addons/gut/` before running:
+
+```sh
+godot --headless --path . --script res://addons/gut/gut_cmdln.gd -- -gdir=res://test/unit -gexit
 ```
 
 ## Agent Artifacts

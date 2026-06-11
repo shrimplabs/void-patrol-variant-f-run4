@@ -22,10 +22,6 @@ StateServer="*res://autoload/state_server.gd"
 TestHarness="*res://autoload/test_harness.gd"
 AudioManager="*res://autoload/audio_manager.gd"
 
-[editor_plugins]
-
-enabled=PackedStringArray("res://addons/gut/plugin.cfg")
-
 [input]
 
 move_left={
