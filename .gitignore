@@ -20,3 +20,8 @@ export_presets.cfg
 
 # Logs
 *.log
+
+# Local validation scratch files
+_swarm_*.gd
+_test_*.gd
+user://*
