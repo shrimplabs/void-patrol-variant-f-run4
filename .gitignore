@@ -1,13 +1,17 @@
 # Godot editor cache and generated files
 .godot/
+.nomedia
 *.uid
 
 # Imported assets (regenerated from source)
 .import/
+*.translation
 
 # Export artifacts
 export.cfg
+export_credentials.cfg
 export_presets.cfg
+*.tmp
 *.apk
 *.aab
 *.ipa
@@ -20,6 +24,11 @@ export_presets.cfg
 
 # Logs
 *.log
+mono_crash.*.json
+
+# Mono
+.mono/
+data_*/
 
 # Local validation scratch files
 _swarm_*.gd
